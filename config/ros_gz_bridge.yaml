@@ -1,0 +1,64 @@
+# Topic contract for model/two_arm_robot.sdf (world: arm_world).
+# Format: ros_gz_bridge parameter_bridge config_file; this is a top-level list.
+# Reference: https://gazebosim.org/docs/latest/ros2_integration/
+#
+# Ownership:
+#   m2_fsm_cpp schedules commands and subsystem ticks in m2_gz_simulation.
+#   lift_subsystem closes the position loop and publishes scalar cmd_vel (m/s).
+#   Gazebo JointController closes the inner velocity-to-force PID loop.
+#   gripper_subsystem coordinates the two existing position controllers.
+# ROS-only target topics and command_status are not bridged.
+# Explicit SDF <topic> values override default model-scoped command topics.
+# See fsm_node_params.yaml for outer-loop gains; inner-loop gains live in the SDF.
+
+# Gazebo -> ROS: sole ROS simulation clock, sourced from this specific world.
+- ros_topic_name: /clock
+  gz_topic_name: /world/arm_world/clock
+  ros_type_name: rosgraph_msgs/msg/Clock
+  gz_type_name: gz.msgs.Clock
+  direction: GZ_TO_ROS
+  lazy: false
+
+# Gazebo -> ROS: JointStatePublisher feedback for all three movable joints.
+# Match JointState entries by name, never by array index:
+#   vertical_to_horizontal: position [-0.4, 0.4] m; velocity m/s
+#   gripper_left_joint:     position [0.0, 0.08] m; velocity m/s
+#   gripper_right_joint:    position [-0.08, 0.0] m; velocity m/s
+- ros_topic_name: /m2_gz_simulation/joint_states
+  gz_topic_name: /world/arm_world/model/two_arm_robot/joint_state
+  ros_type_name: sensor_msgs/msg/JointState
+  gz_type_name: gz.msgs.Model
+  direction: GZ_TO_ROS
+  lazy: false
+
+# ROS -> Gazebo: lift_subsystem output, scalar prismatic velocity in m/s.
+# Positive moves along model +Z. This cmd_vel is Float64, not Twist.
+- ros_topic_name: /m2_gz_simulation/lift/cmd_vel
+  gz_topic_name: /vertical_to_horizontal/cmd_vel
+  ros_type_name: std_msgs/msg/Float64
+  gz_type_name: gz.msgs.Double
+  direction: ROS_TO_GZ
+  subscriber_queue: 1
+  publisher_queue: 1
+  lazy: false
+
+# ROS -> Gazebo: gripper_subsystem left joint position in m, [0.0, 0.08].
+- ros_topic_name: /m2_gz_simulation/gripper/left/cmd_pos
+  gz_topic_name: /gripper_left_joint/cmd_pos
+  ros_type_name: std_msgs/msg/Float64
+  gz_type_name: gz.msgs.Double
+  direction: ROS_TO_GZ
+  subscriber_queue: 1
+  publisher_queue: 1
+  lazy: false
+
+# ROS -> Gazebo: gripper_subsystem right joint position in m, [-0.08, 0.0].
+# For symmetric motion, left = +displacement and right = -displacement.
+- ros_topic_name: /m2_gz_simulation/gripper/right/cmd_pos
+  gz_topic_name: /gripper_right_joint/cmd_pos
+  ros_type_name: std_msgs/msg/Float64
+  gz_type_name: gz.msgs.Double
+  direction: ROS_TO_GZ
+  subscriber_queue: 1
+  publisher_queue: 1
+  lazy: false
