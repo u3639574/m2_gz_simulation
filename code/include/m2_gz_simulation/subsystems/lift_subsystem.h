@@ -1,25 +1,43 @@
-#pragma once
+#ifndef M2_GZ_SIMULATION_SUBSYSTEMS_LIFT_SUBSYSTEM_H
+#define M2_GZ_SIMULATION_SUBSYSTEMS_LIFT_SUBSYSTEM_H
 
-#include "m2_gz_simulation/subsystems/position_subsystem.h"
-#include "m2_gz_simulation/control/position_pid.h"
-#include <std_msgs/msg/float64.hpp>
+#include "m2_fsm_cpp/base/fsm_subsystem.h"
+
+#include "rclcpp/rclcpp.hpp"
+#include "std_msgs/msg/float64.hpp"
+
+#include <memory>
 
 namespace m2::gz_simulation {
-class lift_subsystem : public position_subsystem {
+
+class lift_subsystem : public fsm::subsystem {
 public:
-    lift_subsystem(rclcpp::Node& node, joint_feedback& feedback);
-    bool accepts(double target) const noexcept override;
-    void set_target(double target, fsm::command_instance_id_t owner) noexcept override;
-    bool at_target() const noexcept override;
-    void hold() noexcept override;
-    void reset() noexcept override;
+    explicit lift_subsystem(
+        std::shared_ptr<rclcpp::Node> node) noexcept;
+
+    ~lift_subsystem() noexcept = default;
+
+    void set_lift_pos(double pos) noexcept;
+
+    double lift_target_pos() const noexcept;
+
+    void pub_lift_pos() noexcept;
+
     void tick() noexcept override;
-    void close() noexcept { publisher_.reset(); }
+
 private:
-    void publish(double velocity) noexcept;
-    position_pid pid_;
-    double min_, max_, tolerance_, velocity_tolerance_;
-    std::optional<double> target_;
-    rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr publisher_;
+    std::shared_ptr<rclcpp::Node> node_;
+
+    rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr lift_pos_pub_;
+
+    double min_pos_{-0.4};
+    double max_pos_{0.4};
+
+    // This is the position target / p setpoint.
+    // Commands update it; tick() republishes it continuously.
+    double lift_pos_target_{0.0};
 };
+
 }  // namespace m2::gz_simulation
+
+#endif  // M2_GZ_SIMULATION_SUBSYSTEMS_LIFT_SUBSYSTEM_H

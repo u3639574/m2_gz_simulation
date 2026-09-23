@@ -1,0 +1,2 @@
+m2_gz_simulation_set_selectors(fsm_node)
+m2_gz_simulation_build_current_ros2_dir(fsm_node)

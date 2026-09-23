@@ -1,0 +1,6 @@
+m2b_add_subdirectory(base)
+m2b_add_subdirectory(commands)
+m2b_add_subdirectory(control)
+m2b_add_subdirectory(modes)
+m2b_add_subdirectory(nodes)
+m2b_add_subdirectory(subsystems)

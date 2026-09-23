@@ -1,0 +1,2 @@
+m2_gz_simulation_set_selectors(control_node)
+m2_gz_simulation_build_current_ros2_dir(control_node)

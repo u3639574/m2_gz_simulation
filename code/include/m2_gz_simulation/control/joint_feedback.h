@@ -1,36 +1,65 @@
-#pragma once
+#ifndef M2_GZ_SIMULATION_CONTROL_JOINT_FEEDBACK_H
+#define M2_GZ_SIMULATION_CONTROL_JOINT_FEEDBACK_H
 
-#include <array>
+#include "rclcpp/rclcpp.hpp"
+#include "sensor_msgs/msg/joint_state.hpp"
+
 #include <chrono>
-#include <rclcpp/rclcpp.hpp>
-#include <sensor_msgs/msg/joint_state.hpp>
+#include <memory>
+#include <string>
 
 namespace m2::gz_simulation {
 
-struct joint_sample { double position{0.0}; double velocity{0.0}; };
+struct joint_state_t {
+    double position{0.0};
+    double velocity{0.0};
+};
 
-// Accessed only by the node's single-threaded executor. A complete message is
-// accepted atomically, so lift and gripper never see a partially updated frame.
 class joint_feedback {
 public:
-    explicit joint_feedback(rclcpp::Node& node);
-    void receive(const sensor_msgs::msg::JointState& message);
-    bool advance(double now);  // true on clock rewind or an excessive time gap
-    bool ready() const noexcept { return ready_; }
-    double now() const noexcept { return now_; }
-    double dt() const noexcept { return dt_; }
-    bool stalled() const noexcept { return stalled_; }
-    const joint_sample& lift() const noexcept { return samples_[0]; }
-    const joint_sample& left() const noexcept { return samples_[1]; }
-    const joint_sample& right() const noexcept { return samples_[2]; }
+    explicit joint_feedback(std::shared_ptr<rclcpp::Node> node);
+
+    void advance(double now) noexcept;
+
+    bool ready() const noexcept;
+
+    bool stalled() const noexcept;
+
+    bool discontinuity() const noexcept;
+
+    double now() const noexcept;
+
+    double dt() const noexcept;
+
+    const joint_state_t& lift() const noexcept;
 
 private:
-    std::array<joint_sample, 3> samples_{};
-    bool received_{false}, ready_{false}, started_{false};
-    double stamp_{0.0}, now_{0.0}, dt_{0.0};
-    double timeout_, max_dt_;
+    void receive(const sensor_msgs::msg::JointState& msg) noexcept;
+
+    std::shared_ptr<rclcpp::Node> node_;
+
+    rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_state_sub_;
+
+    std::string lift_joint_name_;
+
+    joint_state_t lift_state_;
+
+    double feedback_timeout_{0.25};
+    double max_control_dt_{0.1};
+
+    double now_{0.0};
+    double dt_{0.0};
+    double feedback_stamp_{0.0};
+
+    bool started_{false};
+    bool feedback_received_{false};
+    bool ready_{false};
     bool stalled_{false};
-    std::chrono::steady_clock::time_point last_clock_progress_{std::chrono::steady_clock::now()};
-    rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr subscription_;
+    bool discontinuity_{false};
+
+    std::chrono::steady_clock::time_point last_clock_progress_;
 };
+
 }  // namespace m2::gz_simulation
+
+#endif  // M2_GZ_SIMULATION_CONTROL_JOINT_FEEDBACK_H

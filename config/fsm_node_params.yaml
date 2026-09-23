@@ -1,27 +1,14 @@
 /m2_gz_simulation/fsm_node:
   ros__parameters:
-    use_sim_time: true
-    loop_frequency: 100.0
-    feedback_timeout: 0.25        # Simulation seconds without a fresh joint sample
-    max_control_dt: 0.1          # Reset on rewind or a larger simulation-time gap
-    command_timeout: 10.0        # Simulation seconds; does not advance while paused
-    settle_time: 0.2             # Both position and velocity must remain in tolerance
-    joint_states_topic: /m2_gz_simulation/joint_states
+    loop_freq: 100
+
     lift:
-      cmd_vel_topic: /m2_gz_simulation/lift/cmd_vel
-      min_position: -0.4         # m relative to the SDF joint's zero position
-      max_position: 0.4
-      kp: 3.0
-      ki: 0.1
-      kd: 0.1
-      integral_limit: 0.2        # Integral of position error, m*s
-      max_velocity: 0.25         # m/s
-      max_acceleration: 0.8      # m/s^2
-      position_tolerance: 0.003  # m
-      velocity_tolerance: 0.01   # m/s
+      set_pos_topic: /m2_gz_simulation/lift/p_setpoint
+      min_pos: -0.4
+      max_pos: 0.4
+
     gripper:
-      left_cmd_pos_topic: /m2_gz_simulation/gripper/left/cmd_pos
-      right_cmd_pos_topic: /m2_gz_simulation/gripper/right/cmd_pos
-      max_displacement: 0.08     # Each finger: left +d, right -d; not total aperture
-      position_tolerance: 0.002
-      velocity_tolerance: 0.01
+      left_set_pos_topic: /m2_gz_simulation/gripper/left/cmd_pos
+      right_set_pos_topic: /m2_gz_simulation/gripper/right/cmd_pos
+      closed_displacement: 0.0
+      open_displacement: 0.08

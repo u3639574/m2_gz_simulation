@@ -1,0 +1,22 @@
+/m2_gz_simulation/control_node:
+  ros__parameters:
+    loop_freq: 100
+
+    joint_states_topic: /m2_gz_simulation/joint_states
+    feedback_timeout: 0.25
+    max_control_dt: 0.1
+
+    lift:
+      joint_name: vertical_to_horizontal
+      p_setpoint_topic: /m2_gz_simulation/lift/p_setpoint
+      cmd_vel_topic: /m2_gz_simulation/lift/cmd_vel
+
+      min_position: -0.4
+      max_position: 0.4
+
+      kp: 3.0
+      ki: 0.1
+      kd: 0.1
+      integral_limit: 0.2
+      max_velocity: 0.25
+      max_acceleration: 0.8
