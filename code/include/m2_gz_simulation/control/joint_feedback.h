@@ -36,7 +36,8 @@ public:
 private:
     void receive(const sensor_msgs::msg::JointState& msg) noexcept;
 
-    std::shared_ptr<rclcpp::Node> node_;
+    // The owning control_node outlives this helper.
+    rclcpp::Node* node_;
 
     rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_state_sub_;
 

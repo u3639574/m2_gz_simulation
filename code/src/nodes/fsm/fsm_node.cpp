@@ -15,6 +15,10 @@ fsm_node::fsm_node() noexcept
 bool fsm_node::init() noexcept
 {
     loop_freq_ = get_parameter("loop_freq").as_int();
+    if (loop_freq_ < 1 || loop_freq_ > 1000) {
+        TROLLY_ERROR("[fsm_node] loop_freq must be in [1, 1000] Hz.");
+        return false;
+    }
     input_topic_ = get_parameter("input_topic").as_string();
 
     robot_ = std::make_unique<simulation_robot>(
@@ -25,6 +29,8 @@ bool fsm_node::init() noexcept
 void fsm_node::run() noexcept
 {
     robot_->start();
+    robot_->close();
+    robot_.reset();
 }
 
 }  // namespace m2::gz_simulation

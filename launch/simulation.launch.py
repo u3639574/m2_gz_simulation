@@ -5,6 +5,7 @@ from launch.actions import (
     DeclareLaunchArgument,
     EmitEvent,
     ExecuteProcess,
+    LogInfo,
     OpaqueFunction,
     RegisterEventHandler,
 )
@@ -19,12 +20,13 @@ def launch_nodes(context):
     gui = LaunchConfiguration('gui').perform(context).lower() == 'true'
     paused = LaunchConfiguration('paused').perform(context).lower() == 'true'
     world = LaunchConfiguration('world').perform(context)
+    command_source = LaunchConfiguration('command_source').perform(context)
 
     gazebo = ExecuteProcess(
         cmd=[
             'gz',
             'sim',
-            *([] if gui else ['-s']),
+            *(['--gui-config', LaunchConfiguration('gui_config').perform(context)] if gui else ['-s']),
             *([] if paused else ['-r']),
             '-v',
             '3',
@@ -71,6 +73,15 @@ def launch_nodes(context):
         output='screen',
     )
 
+    # Exactly one producer at each control layer. Terminal velocity tests must
+    # not compete with control_node; terminal position tests must not compete
+    # with the FSM's continuously published setpoint.
+    processes = [bridge]
+    if command_source == 'fsm':
+        processes.append(fsm)
+    if command_source != 'velocity':
+        processes.append(control)
+
     # Gazebo's controller can retain its last command if the ROS-side
     # processes disappear, so stop the world if any required process exits.
     handlers = [
@@ -86,16 +97,26 @@ def launch_nodes(context):
                 ],
             )
         )
-        for process in (bridge, fsm, control)
+        for process in processes
     ]
 
-    return [*handlers, gazebo, bridge, fsm, control]
+    return [LogInfo(msg=f'Command source: {command_source}'), *handlers, gazebo, *processes]
 
 
 def generate_launch_description():
     share = FindPackageShare('m2_gz_simulation')
 
     return LaunchDescription([
+        DeclareLaunchArgument(
+            'command_source', default_value='fsm', choices=['fsm', 'position', 'velocity'],
+            description='fsm: commands/subsystems; position: direct p_setpoint; '
+                        'velocity: direct cmd_vel (no FSM or ROS PID)',
+        ),
+        DeclareLaunchArgument(
+            'gui_config',
+            default_value=PathJoinSubstitution([share, 'config', 'gazebo_gui.config']),
+            description='Gazebo GUI configuration including keyboard publisher',
+        ),
         DeclareLaunchArgument(
             'gui',
             default_value='true',

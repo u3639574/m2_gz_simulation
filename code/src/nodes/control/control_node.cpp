@@ -19,9 +19,9 @@ bool control_node::init() noexcept
 {
     loop_freq_ = get_parameter("loop_freq").as_int();
 
-    if (loop_freq_ <= 0) {
+    if (loop_freq_ < 1 || loop_freq_ > 1000) {
         TROLLY_ERROR(
-            "[control_node] loop_freq must be greater than zero.");
+            "[control_node] loop_freq must be in [1, 1000] Hz.");
         return false;
     }
 
@@ -35,7 +35,7 @@ bool control_node::init() noexcept
 
     timer_ =
         create_wall_timer(
-            std::chrono::milliseconds(1000 / loop_freq_),
+            std::chrono::duration<double>(1.0 / static_cast<double>(loop_freq_)),
             [this]() {
                 tick();
             });

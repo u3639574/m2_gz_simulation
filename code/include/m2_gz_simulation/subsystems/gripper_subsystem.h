@@ -7,6 +7,7 @@
 #include "std_msgs/msg/float64.hpp"
 
 #include <memory>
+#include "m2_gz_simulation/subsystems/motion_completion.h"
 
 namespace m2::gz_simulation {
 
@@ -28,13 +29,23 @@ public:
     void gripper_toggle() noexcept;
 
     bool is_gripped() const noexcept;
+    bool at_target() const noexcept
+    { return completion_ && completion_->at_target({left_setpoint_, right_setpoint_}); }
 
     void pub_gripper_pos() noexcept;
 
     void tick() noexcept override;
+    void close() noexcept
+    {
+        completion_.reset();
+        left_pos_pub_.reset();
+        right_pos_pub_.reset();
+        node_.reset();
+    }
 
 private:
     std::shared_ptr<rclcpp::Node> node_;
+    std::unique_ptr<motion_completion> completion_;
 
     rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr left_pos_pub_;
     rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr right_pos_pub_;

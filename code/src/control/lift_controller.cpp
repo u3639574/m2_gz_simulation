@@ -11,7 +11,7 @@ namespace m2::gz_simulation {
 lift_controller::lift_controller(
     std::shared_ptr<rclcpp::Node> node,
     joint_feedback& feedback)
-    : node_(std::move(node))
+    : node_(node.get())
     , feedback_(feedback)
     , pid_(
           node_->declare_parameter<double>("lift.kp", 3.0),
@@ -80,13 +80,18 @@ void lift_controller::receive_setpoint(
         return;
     }
 
-    p_setpoint_ =
+    const double target =
         std::clamp(
             msg.data,
             min_position_,
             max_position_);
 
-    pid_.reset();
+    // The FSM republishes its target every tick. Treat identical values as a
+    // heartbeat, not a new motion: resetting also resets the acceleration ramp.
+    if (!p_setpoint_ || target != *p_setpoint_) {
+        p_setpoint_ = target;
+        pid_.reset();
+    }
 }
 
 void lift_controller::publish_velocity(double velocity) noexcept

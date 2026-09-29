@@ -1,11 +1,20 @@
 /m2_gz_simulation/fsm_node:
   ros__parameters:
     loop_freq: 100
+    input_topic: /keyboard/keypress
+
+    completion:
+      joint_states_topic: /m2_gz_simulation/joint_states
+      position_tolerance: 0.003  # metres
+      velocity_tolerance: 0.01  # m/s
+      feedback_timeout: 0.25  # seconds
 
     lift:
       set_pos_topic: /m2_gz_simulation/lift/p_setpoint
       min_pos: -0.4
       max_pos: 0.4
+      # Finger tips at base top: 0.75 + q - 0.10 - 0.09 = 0.50 m.
+      bottom_position: -0.06
 
     gripper:
       left_set_pos_topic: /m2_gz_simulation/gripper/left/cmd_pos

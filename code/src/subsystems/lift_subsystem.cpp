@@ -18,8 +18,12 @@ lift_subsystem::lift_subsystem(std::shared_ptr<rclcpp::Node> node) noexcept
     node_->declare_parameter<double>("lift.min_pos", -0.4);
     node_->declare_parameter<double>("lift.max_pos", 0.4);
 
+    node_->declare_parameter<double>("lift.bottom_position", -0.06);
+
     min_pos_ = node_->get_parameter("lift.min_pos").as_double();
     max_pos_ = node_->get_parameter("lift.max_pos").as_double();
+
+    bottom_pos_ = std::clamp(node_->get_parameter("lift.bottom_position").as_double(), min_pos_, max_pos_);
 
     const auto set_pos_topic =
         node_->get_parameter("lift.set_pos_topic").as_string();
@@ -27,9 +31,9 @@ lift_subsystem::lift_subsystem(std::shared_ptr<rclcpp::Node> node) noexcept
     lift_pos_pub_ =
         node_->create_publisher<std_msgs::msg::Float64>(set_pos_topic, 1);
 
-    // Initial target. The subsystem continuously publishes this value until
-    // a command calls set_lift_pos().
-    lift_pos_target_ = 0.0;
+    completion_ = std::make_unique<motion_completion>(*node_,
+        std::vector<std::string>{"vertical_to_horizontal"});
+    // Wait for an explicit command instead of moving to zero at startup.
 
     TROLLY_INFO(
         "[lift_subsystem] Setpoint topic: %s, position range: [%.3f, %.3f]",
@@ -56,6 +60,8 @@ void lift_subsystem::set_lift_pos(double pos) noexcept
     }
 
     lift_pos_target_ = std::clamp(pos, min_pos_, max_pos_);
+    has_target_ = true;
+    completion_->invalidate();
 
     TROLLY_INFO(
         "[lift_subsystem] Lift target set to %.3f",
@@ -69,6 +75,7 @@ double lift_subsystem::lift_target_pos() const noexcept
 
 void lift_subsystem::pub_lift_pos() noexcept
 {
+    if (!has_target_ || !lift_pos_pub_ || !rclcpp::ok()) { return; }
     std_msgs::msg::Float64 msg;
     msg.data = lift_pos_target_;
 

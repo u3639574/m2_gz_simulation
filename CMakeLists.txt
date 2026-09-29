@@ -8,10 +8,17 @@ m2b_add_subdirectory(code)
 
 if(BUILD_TESTING)
     find_package(ament_cmake_gtest REQUIRED)
+    ament_add_gtest(keyboard_command_test test/keyboard_command_test.cpp)
+    target_include_directories(keyboard_command_test PRIVATE code/include)
+    target_link_libraries(keyboard_command_test m2-gz-simulation
+        m2_fsm_cpp::m2-fsm-cpp m2_fsm_cpp::m2-fsm-cpp-interface
+        trolly::trolly-interface trolly::trolly-ros2)
+    ament_target_dependencies(keyboard_command_test rclcpp sensor_msgs std_msgs std_srvs)
     ament_add_gtest(control_test test/control_test.cpp)
     target_include_directories(control_test PRIVATE code/include)
     target_link_libraries(control_test m2-gz-simulation
-        m2_fsm_cpp::m2-fsm-cpp m2_fsm_cpp::m2-fsm-cpp-interface trolly::trolly-interface)
+        m2_fsm_cpp::m2-fsm-cpp m2_fsm_cpp::m2-fsm-cpp-interface
+        trolly::trolly-interface trolly::trolly-ros2)
     ament_target_dependencies(control_test rclcpp sensor_msgs std_msgs std_srvs)
 endif()
 

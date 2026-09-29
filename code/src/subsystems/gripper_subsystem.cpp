@@ -58,6 +58,8 @@ gripper_subsystem::gripper_subsystem(
             right_set_pos_topic,
             1);
 
+    completion_ = std::make_unique<motion_completion>(*node_,
+        std::vector<std::string>{"gripper_left_joint", "gripper_right_joint"});
     // Start released / open.
     gripper_gripped_ = false;
     set_gripper(false);
@@ -79,6 +81,7 @@ gripper_subsystem::gripper_subsystem(
 void gripper_subsystem::set_gripper(bool grip) noexcept
 {
     gripper_gripped_ = grip;
+    completion_->invalidate();
 
     if (gripper_gripped_) {
         left_setpoint_ = closed_displacement_;
@@ -117,6 +120,7 @@ bool gripper_subsystem::is_gripped() const noexcept
 
 void gripper_subsystem::pub_gripper_pos() noexcept
 {
+    if (!left_pos_pub_ || !right_pos_pub_ || !rclcpp::ok()) { return; }
     std_msgs::msg::Float64 left_msg;
     left_msg.data = left_setpoint_;
     left_pos_pub_->publish(left_msg);

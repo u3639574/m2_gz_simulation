@@ -10,7 +10,7 @@ namespace m2::gz_simulation {
 
 joint_feedback::joint_feedback(
     std::shared_ptr<rclcpp::Node> node)
-    : node_(std::move(node))
+    : node_(node.get())
 {
     node_->declare_parameter<std::string>(
         "joint_states_topic",

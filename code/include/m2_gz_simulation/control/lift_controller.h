@@ -26,7 +26,8 @@ private:
 
     void publish_velocity(double velocity) noexcept;
 
-    std::shared_ptr<rclcpp::Node> node_;
+    // Owned by control_node; retaining shared_from_this() here creates a cycle.
+    rclcpp::Node* node_;
 
     joint_feedback& feedback_;
 
