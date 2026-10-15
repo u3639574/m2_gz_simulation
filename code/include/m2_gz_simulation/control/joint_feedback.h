@@ -17,7 +17,8 @@ struct joint_state_t {
 
 class joint_feedback {
 public:
-    explicit joint_feedback(std::shared_ptr<rclcpp::Node> node);
+    explicit joint_feedback(std::shared_ptr<rclcpp::Node> node,
+        const std::string& prefix = "lift", const std::string& joint_name = "vertical_to_horizontal");
 
     void advance(double now) noexcept;
 

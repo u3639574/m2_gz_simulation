@@ -1,73 +1,94 @@
-# Topic contract for model/two_arm_robot.sdf (world: arm_world).
-# Format: ros_gz_bridge parameter_bridge config_file; this is a top-level list.
-# Reference: https://gazebosim.org/docs/latest/ros2_integration/
-#
-# Ownership:
-#   m2_fsm_cpp schedules commands and subsystem ticks in m2_gz_simulation.
-#   lift_subsystem publishes position setpoints; control_node closes the
-#   position loop and publishes scalar cmd_vel (m/s).
-#   Gazebo JointController closes the inner velocity-to-force PID loop.
-#   gripper_subsystem coordinates the two existing position controllers.
-# ROS-only lift/target_position and lift/p_setpoint topics are not bridged.
-# Explicit SDF <topic> values override default model-scoped command topics.
-# See control_node_params.yaml for outer-loop gains; inner-loop gains live in the SDF.
-
-# Gazebo -> ROS: sole ROS simulation clock, sourced from this specific world.
+# Lift/yaw position -> velocity -> effort cascades run entirely in control_node.
+# ApplyJointForce receives N for the lift and Nm for yaw. No Gazebo lift velocity PID.
+# velocity_target is diagnostic only; p_setpoint is ROS-only.
+# Arrow/X TriggeredPublishers operate on /chassis/cmd_vel directly in Gazebo.
 - ros_topic_name: /clock
   gz_topic_name: /world/arm_world/clock
   ros_type_name: rosgraph_msgs/msg/Clock
   gz_type_name: gz.msgs.Clock
   direction: GZ_TO_ROS
   lazy: false
-
-# Gazebo -> ROS: JointStatePublisher feedback for all three movable joints.
-# Match JointState entries by name, never by array index:
-#   vertical_to_horizontal: position [-0.4, 0.4] m; velocity m/s
-#   gripper_left_joint:     position [0.0, 0.08] m; velocity m/s
-#   gripper_right_joint:    position [-0.08, 0.0] m; velocity m/s
 - ros_topic_name: /m2_gz_simulation/joint_states
   gz_topic_name: /world/arm_world/model/two_arm_robot/joint_state
   ros_type_name: sensor_msgs/msg/JointState
   gz_type_name: gz.msgs.Model
   direction: GZ_TO_ROS
   lazy: false
-
-# ROS -> Gazebo: control_node output, scalar prismatic velocity in m/s.
-# Positive moves along model +Z. This cmd_vel is Float64, not Twist.
-- ros_topic_name: /m2_gz_simulation/lift/cmd_vel
-  gz_topic_name: /vertical_to_horizontal/cmd_vel
+- ros_topic_name: /keyboard/keypress
+  gz_topic_name: /keyboard/keypress
+  ros_type_name: std_msgs/msg/Int32
+  gz_type_name: gz.msgs.Int32
+  direction: GZ_TO_ROS
+  lazy: false
+- ros_topic_name: /m2_gz_simulation/lift/cmd_effort
+  gz_topic_name: /model/two_arm_robot/joint/vertical_to_horizontal/cmd_force
   ros_type_name: std_msgs/msg/Float64
   gz_type_name: gz.msgs.Double
   direction: ROS_TO_GZ
-  subscriber_queue: 1
-  publisher_queue: 1
   lazy: false
-
-# ROS -> Gazebo: gripper_subsystem left joint position in m, [0.0, 0.08].
+- ros_topic_name: /m2_gz_simulation/yaw/cmd_effort
+  gz_topic_name: /model/two_arm_robot/joint/base_to_vertical/cmd_force
+  ros_type_name: std_msgs/msg/Float64
+  gz_type_name: gz.msgs.Double
+  direction: ROS_TO_GZ
+  lazy: false
 - ros_topic_name: /m2_gz_simulation/gripper/left/cmd_pos
   gz_topic_name: /gripper_left_joint/cmd_pos
   ros_type_name: std_msgs/msg/Float64
   gz_type_name: gz.msgs.Double
   direction: ROS_TO_GZ
-  subscriber_queue: 1
-  publisher_queue: 1
   lazy: false
-
-# ROS -> Gazebo: gripper_subsystem right joint position in m, [-0.08, 0.0].
-# For symmetric motion, left = +displacement and right = -displacement.
+- ros_topic_name: /m2_gz_simulation/gripper/left/contacts
+  gz_topic_name: /gripper/left/contacts
+  ros_type_name: ros_gz_interfaces/msg/Contacts
+  gz_type_name: gz.msgs.Contacts
+  direction: GZ_TO_ROS
+  lazy: false
 - ros_topic_name: /m2_gz_simulation/gripper/right/cmd_pos
   gz_topic_name: /gripper_right_joint/cmd_pos
   ros_type_name: std_msgs/msg/Float64
   gz_type_name: gz.msgs.Double
   direction: ROS_TO_GZ
-  subscriber_queue: 1
-  publisher_queue: 1
   lazy: false
-
-# Gazebo GUI keyboard events -> keyboard test mode (Qt key codes, not JoyData).
-- ros_topic_name: /keyboard/keypress
-  gz_topic_name: /keyboard/keypress
-  ros_type_name: std_msgs/msg/Int32
-  gz_type_name: gz.msgs.Int32
+- ros_topic_name: /m2_gz_simulation/gripper/right/contacts
+  gz_topic_name: /gripper/right/contacts
+  ros_type_name: ros_gz_interfaces/msg/Contacts
+  gz_type_name: gz.msgs.Contacts
+  direction: GZ_TO_ROS
+  lazy: false
+- ros_topic_name: /m2_gz_simulation/chassis/cmd_vel
+  gz_topic_name: /chassis/cmd_vel
+  ros_type_name: geometry_msgs/msg/Twist
+  gz_type_name: gz.msgs.Twist
+  direction: ROS_TO_GZ
+  lazy: false
+- ros_topic_name: /m2_gz_simulation/chassis/odometry
+  gz_topic_name: /chassis/odometry
+  ros_type_name: nav_msgs/msg/Odometry
+  gz_type_name: gz.msgs.Odometry
+  direction: GZ_TO_ROS
+  lazy: false
+- ros_topic_name: /m2_gz_simulation/poses/two_arm_robot
+  gz_topic_name: /model/two_arm_robot/pose
+  ros_type_name: tf2_msgs/msg/TFMessage
+  gz_type_name: gz.msgs.Pose_V
+  direction: GZ_TO_ROS
+  lazy: false
+- ros_topic_name: /m2_gz_simulation/poses/earth_block_1
+  gz_topic_name: /model/earth_block_1/pose
+  ros_type_name: tf2_msgs/msg/TFMessage
+  gz_type_name: gz.msgs.Pose_V
+  direction: GZ_TO_ROS
+  lazy: false
+- ros_topic_name: /m2_gz_simulation/poses/earth_block_2
+  gz_topic_name: /model/earth_block_2/pose
+  ros_type_name: tf2_msgs/msg/TFMessage
+  gz_type_name: gz.msgs.Pose_V
+  direction: GZ_TO_ROS
+  lazy: false
+- ros_topic_name: /m2_gz_simulation/poses/earth_block_3
+  gz_topic_name: /model/earth_block_3/pose
+  ros_type_name: tf2_msgs/msg/TFMessage
+  gz_type_name: gz.msgs.Pose_V
   direction: GZ_TO_ROS
   lazy: false

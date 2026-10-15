@@ -2,22 +2,18 @@
   ros__parameters:
     loop_freq: 100
     input_topic: /keyboard/keypress
-
     completion:
       joint_states_topic: /m2_gz_simulation/joint_states
-      position_tolerance: 0.003  # metres
-      velocity_tolerance: 0.01  # m/s
-      feedback_timeout: 0.25  # seconds
-
+      position_tolerance: 0.003
+      velocity_tolerance: 0.01
+      feedback_timeout: 0.25
     lift:
       set_pos_topic: /m2_gz_simulation/lift/p_setpoint
-      min_pos: -0.4
-      max_pos: 0.4
-      # Finger tips at base top: 0.75 + q - 0.10 - 0.09 = 0.50 m.
-      bottom_position: -0.06
-
+      min_pos: 0.0
+      max_pos: 1.1
+      bottom_position: 0.0  # finger tips ~0.06m above venue, ready for 0.35m cube
     gripper:
       left_set_pos_topic: /m2_gz_simulation/gripper/left/cmd_pos
       right_set_pos_topic: /m2_gz_simulation/gripper/right/cmd_pos
       closed_displacement: 0.0
-      open_displacement: 0.08
+      open_displacement: 0.22  # clear gap 0.54m > block width 0.35m

@@ -7,7 +7,7 @@
 #include "m2_gz_simulation/modes/test_mode.h"
 #include "std_msgs/msg/int32.hpp"
 #include "std_msgs/msg/float64.hpp"
-#include "std_srvs/srv/trigger.hpp"
+
 
 namespace m2::gz_simulation {
 
@@ -24,9 +24,8 @@ public:
 private:
     bool closed_{false};
     test_mode mode_;
+    rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr yaw_request_;
     rclcpp::Subscription<std_msgs::msg::Int32>::SharedPtr keyboard_sub_;
-    rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr lift_request_;
-    rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr toggle_request_;
 };
 
 }  // namespace m2::gz_simulation

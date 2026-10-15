@@ -25,16 +25,16 @@ gripper_subsystem::gripper_subsystem(
     //     left joint  =  0.0 m
     //     right joint = -0.0 m
     //
-    // open_displacement = 0.08:
-    //     left joint  =  0.08 m
-    //     right joint = -0.08 m
+    // open_displacement = 0.22:
+    //     left joint  =  0.22 m
+    //     right joint = -0.22 m
     node_->declare_parameter<double>(
         "gripper.closed_displacement",
         0.0);
 
     node_->declare_parameter<double>(
         "gripper.open_displacement",
-        0.08);
+        0.22);
 
     closed_displacement_ =
         node_->get_parameter("gripper.closed_displacement").as_double();
@@ -60,6 +60,12 @@ gripper_subsystem::gripper_subsystem(
 
     completion_ = std::make_unique<motion_completion>(*node_,
         std::vector<std::string>{"gripper_left_joint", "gripper_right_joint"});
+    left_contact_sub_ = node_->create_subscription<ros_gz_interfaces::msg::Contacts>(
+        "gripper/left/contacts", rclcpp::SensorDataQoS(),
+        [this](const ros_gz_interfaces::msg::Contacts& msg) { receive_contact(msg, left_contact_); });
+    right_contact_sub_ = node_->create_subscription<ros_gz_interfaces::msg::Contacts>(
+        "gripper/right/contacts", rclcpp::SensorDataQoS(),
+        [this](const ros_gz_interfaces::msg::Contacts& msg) { receive_contact(msg, right_contact_); });
     // Start released / open.
     gripper_gripped_ = false;
     set_gripper(false);
@@ -80,6 +86,7 @@ gripper_subsystem::gripper_subsystem(
 
 void gripper_subsystem::set_gripper(bool grip) noexcept
 {
+    left_contact_ = {}; right_contact_ = {};
     gripper_gripped_ = grip;
     completion_->invalidate();
 
@@ -128,6 +135,30 @@ void gripper_subsystem::pub_gripper_pos() noexcept
     std_msgs::msg::Float64 right_msg;
     right_msg.data = right_setpoint_;
     right_pos_pub_->publish(right_msg);
+}
+
+void gripper_subsystem::receive_contact(const ros_gz_interfaces::msg::Contacts& msg, contact_state& state) noexcept
+{
+    std::string block;
+    for (const auto& contact : msg.contacts) {
+        for (const auto& name : {contact.collision1.name, contact.collision2.name}) {
+            const auto begin = name.find("earth_block_");
+            if (begin != std::string::npos) { block = name.substr(begin, name.find("::", begin) - begin); }
+        }
+    }
+    const auto now = std::chrono::steady_clock::now();
+    if (block != state.block || std::chrono::duration<double>(now - state.received).count() > 0.25) { state.since = now; }
+    state.block = block; state.received = now;
+}
+
+bool gripper_subsystem::holding_block() const noexcept
+{
+    const auto now = std::chrono::steady_clock::now();
+    return !left_contact_.block.empty() && left_contact_.block == right_contact_.block &&
+        std::chrono::duration<double>(now - left_contact_.received).count() < 0.25 &&
+        std::chrono::duration<double>(now - right_contact_.received).count() < 0.25 &&
+        std::chrono::duration<double>(now - left_contact_.since).count() >= 0.1 &&
+        std::chrono::duration<double>(now - right_contact_.since).count() >= 0.1;
 }
 
 void gripper_subsystem::tick() noexcept

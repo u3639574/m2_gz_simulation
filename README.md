@@ -1,330 +1,172 @@
 # m2_gz_simulation
 
-Gazebo Harmonic simulation of a lift + two-finger gripper robot, with cascaded ROS 2 position control via the `m2_fsm_cpp` command framework.
+ROS 2 Jazzy / Gazebo Harmonic teaching simulation: a mobile lift/gripper robot on
+the supplied 2027 Robocon venue, with three dynamic Earth Blocks in red storage.
+Commands and subsystems remain in `fsm_node`; lift/yaw control remains in the
+separate `control_node`.
 
-## Architecture
-
-The FSM scheduler runs inside `fsm_node`. The independent `control_node` receives
-position targets over ROS topics; it does not run the command scheduler:
-
-```
-/keyboard/keypress (Gazebo Int32) → bridge → test_mode → command / group
-
-fsm_node (command/mode scheduling)
-  ├── lift_subsystem ──→ /m2_gz_simulation/lift/p_setpoint (Float64)
-  └── gripper_subsystem ──→ /m2_gz_simulation/gripper/{left,right}/cmd_pos (Float64)
-
-control_node (outer-loop PID)
-  ├── joint_feedback ← /m2_gz_simulation/joint_states (from Gazebo bridge)
-  └── lift_controller ← /m2_gz_simulation/lift/p_setpoint
-                     ──→ /m2_gz_simulation/lift/cmd_vel (Float64)
-
-ros_gz_bridge (directed mappings)
-  ├── /clock, /joint_states, /keyboard/keypress ← Gazebo
-  └── /lift/cmd_vel, /gripper/{left,right}/cmd_pos → Gazebo
-```
-
-- **Lift** uses an outer ROS position PID producing a velocity command; Gazebo's `JointController` closes the inner velocity loop.
-- **Gripper** maps a Boolean grip state to two fixed position targets; Gazebo's `JointPositionControllers` handle the motion directly.
-- The four keyboard motion commands finish using fresh joint position/velocity feedback; the FSM contains no PID.
-- Both legacy `set_lift_pos_command` and `gripper_toggle_grip_command` return immediately — they mean "target issued," not "motion completed."
-
-## Dependencies
-
-| Dependency | Type |
-|---|---|
-| `rclcpp`, `std_msgs`, `std_srvs`, `sensor_msgs` | ROS 2 |
-| `trolly` | M2 utility library |
-| `m2_fsm_cpp` | FSM framework |
-| `m2_interfaces` | M2 message definitions |
-| `ros_gz_sim`, `ros_gz_bridge` | Gazebo integration (runtime) |
-
-## Build
-
-From the workspace root:
+## Build and run
 
 ```bash
-colcon build --packages-select m2_gz_simulation
-```
-
-The build produces:
-- `libm2-gz-simulation.so` — shared library (subsystems, commands, control, modes)
-- `fsm_node` — FSM executable
-- `control_node` — control loop executable
-- `control_test`, `keyboard_command_test` — gtest binaries (when testing is enabled)
-
-## Launch
-
-Start Gazebo, the bridge, and both ROS nodes:
-
-```bash
+cd ~/ros2_ws
+source /opt/ros/jazzy/setup.bash
+colcon build --packages-select m2_gz_simulation --cmake-args -DBUILD_TESTING=ON
+source install/setup.bash
 ros2 launch m2_gz_simulation simulation.launch.py
 ```
 
-Launch arguments:
+Focus the Gazebo GUI window. It loads KeyPublisher automatically. The robot starts
+at `(3.70, 3.85)` facing world +X, close to the first storage block. Simulation
+starts running by default.
 
-| Argument | Default | Description |
+| Key | Action |
+|---|---|
+| ↑ / ↓ | Drive forwards / backwards at 0.2 m/s |
+| ← / → | Turn chassis left / right at 0.4 rad/s |
+| X | Stop chassis |
+| W / S | Raise lift to 1.1 m / lower to 0 m |
+| E / D | Open / close gripper |
+| Q | Sequential: close around a block (or close empty), then raise |
+| A | Parallel: open and lower |
+| R / F | Turntable to 0° / 180° relative to chassis |
+
+Arrow and X keys use the tutorial's Gazebo `TriggeredPublisher -> DiffDrive`
+connection. A press latches its velocity; releasing the key does not stop the robot.
+Press X to stop. The FSM handles the letter-key arm/yaw commands using the key enum.
+Do not drive from a second publisher while using arrow keys.
+
+For a pickup, keep the arm at zero yaw and bottom height, open the fingers, drive
+about 0.35 m forward until the cube is between the pads, press X, then Q. S lowers
+while retaining the grip; E releases it. A opens immediately while lowering, so a
+held block is released at the current height.
+
+## Architecture
+
+```text
+Keyboard Int32 -> test_mode -> m2_fsm_cpp command / group -> subsystems
+  lift_subsystem -> lift/p_setpoint (m) ---+
+  yaw_subsystem  -> yaw/p_setpoint (rad) --+--> independent control_node:
+                                               position PID -> velocity target
+                                               velocity PID -> effort + feedforward
+                                               -> Gazebo ApplyJointForce -> physics
+  gripper_subsystem -> finger position targets -> Gazebo position controllers
+
+Gazebo JointState -> control_node feedback
+                 -> FSM motion completion (no PID)
+Gazebo finger contacts -> gripper grasp completion
+
+Arrow/X Int32 -> Gazebo TriggeredPublisher -> Twist -> four-wheel DiffDrive
+```
+
+Both lift and yaw now run an explicit two-loop cascade in C++. The old lift Gazebo
+velocity PID is removed to avoid two competing inner controllers. Effort units are
+newtons (lift) and newton-metres (yaw). The topology follows the supplied
+`~/Downloads/foc_math.c`; firmware ERPM/current scaling is replaced with SI units.
+
+`lift/velocity_target` and `yaw/velocity_target` are diagnostic outputs. They are
+not bridged to another controller. Identical or changed setpoints preserve loop
+state and acceleration continuity; invalid feedback or a clock discontinuity resets
+both loops. The lift holds its measured startup position using gravity feedforward.
+
+## Yaw interface
+
+Zero yaw points the arm along chassis +X; positive yaw is counterclockwise viewed
+from above. This is relative to the chassis, not a world compass heading. Commands
+use the shortest angular path, including across 359°/0°.
+
+```bash
+ros2 topic pub --once /m2_gz_simulation/yaw/target_degrees \
+  std_msgs/msg/Float64 '{data: 90.0}'
+```
+
+The request schedules `set_yaw_angle_command` and owns the yaw subsystem until
+completion. The public API accepts finite angles `0 <= theta < 360` degrees;
+invalid values are rejected. Internally the subsystem publishes radians.
+
+Your removal of the old `lift/target_position` subscription and `gripper/toggle`
+service is preserved. Those interfaces no longer exist.
+
+## Launch modes
+
+| `command_source` | Nodes | Direct test interface |
 |---|---|---|
-| `command_source` | `fsm` | `fsm`: commands + controller; `position`: controller only; `velocity`: bridge/Gazebo only |
-| `gui` | `true` | Show the Gazebo GUI (`false` for headless) |
-| `gui_config` | `config/gazebo_gui.config` | Scene controls and automatic KeyPublisher loading |
-| `paused` | `false` | Start simulation paused |
-| `world` | `model/two_arm_robot.sdf` | SDF world file |
-| `bridge_config` | `config/ros_gz_bridge.yaml` | Gazebo bridge topic mappings |
-| `fsm_config` | `config/fsm_node_params.yaml` | FSM node parameters |
-| `control_config` | `config/control_node_params.yaml` | Control node parameters |
+| `fsm` (default) | FSM and controller | Keyboard / `yaw/target_degrees` |
+| `position` | Controller only | `lift/p_setpoint` (m), `yaw/p_setpoint` (rad) |
+| `effort` | Neither application node | `lift/cmd_effort` (N), `yaw/cmd_effort` (Nm) |
 
-Examples:
+Gazebo, bridge, gripper plugins and chassis controls exist in all modes. Stop the
+previous launch before switching. The old `velocity` launch mode and lift
+`cmd_vel` actuator interface have been replaced by effort control.
 
 ```bash
-# Headless with custom world
-ros2 launch m2_gz_simulation simulation.launch.py gui:=false world:=path/to/custom.sdf
-
-# Paused start (inspect before running)
-ros2 launch m2_gz_simulation simulation.launch.py paused:=true
+ros2 launch m2_gz_simulation simulation.launch.py command_source:=position gui:=false
+# Another sourced terminal:
+ros2 topic pub --once /m2_gz_simulation/lift/p_setpoint std_msgs/msg/Float64 '{data: 0.5}'
 ```
 
-If the bridge, `fsm_node`, or `control_node` exits, the entire launch shuts down to prevent Gazebo from retaining stale commands.
+Other arguments: `gui` (true), `paused` (false), `world`, `gui_config`,
+`bridge_config`, `fsm_config`, and `control_config`. Launch adds the installed model
+directory to `GZ_SIM_RESOURCE_PATH`; no user-specific model search path is needed.
 
-## Configuration
+## Physical model
 
-Two parameter files, each keyed to its node namespace (`/m2_gz_simulation/{fsm,control}_node`).
+- Earth Blocks: 0.35 × 0.35 × 0.35 m, nominal mass 0.6 kg; rigid boxes with uniform
+  inertia and friction. Source: supplied rulebook v1.1, page 9. No Sky Blocks.
+- Three block centres: `(4.95, 3.85)`, `(4.95, 4.45)`, `(4.95, 5.05)`, all inside
+  the red 1 × 2 m storage area. Resting centre height is 0.175 m.
+- Vertical mast: 1.6 m; horizontal beam: 0.9 m; lift travel: 0–1.1 m. At bottom,
+  fingers span roughly 0.06–0.38 m above the floor, overlapping an Earth Block.
+- Open clear gripper gap: 0.54 m, greater than even the rulebook's +5% block width.
+  Pads are 0.18 × 0.04 × 0.32 m with friction `mu = mu2 = 2.0` and force limit 25 N.
+- Closing against a cube stops the fingers near ±0.125 m. Completion accepts fresh
+  contact from both pads on the same Earth Block for at least 0.1 s. Empty closure
+  still uses position/velocity completion. There is no artificial fixed attachment.
+- Four wheels: 0.12 m radius, 0.68 m separation, two joints per side in DiffDrive.
+  Base is dynamic and no longer attached to the world.
 
-### fsm_node_params.yaml
+The model is a teaching robot with enlarged arms, not a competition-size-compliance
+model. The field is the requested community model, not a certified digital twin.
+Imported visual Sky Blocks are removed; collision geometry follows the venue solids
+rather than the upstream coarse, mismatched floor/platform collision boxes.
 
-| Parameter | Default | Description |
-|---|---|---|
-| `loop_freq` | `100` | FSM tick rate (Hz) |
-| `input_topic` | `/keyboard/keypress` | Gazebo key events bridged as ROS Int32 |
-| `lift.bottom_position` | `-0.06` | Keyboard bottom preset: finger tips at base top (m) |
-| `completion.position_tolerance` | `0.003` | Command completion position tolerance (m) |
-| `completion.velocity_tolerance` | `0.01` | Command completion speed tolerance (m/s) |
-| `completion.feedback_timeout` | `0.25` | Maximum simulation and wall age of completion feedback (s) |
-| `lift.set_pos_topic` | `/m2_gz_simulation/lift/p_setpoint` | Lift position setpoint topic |
-| `lift.min_pos` | `-0.4` | Minimum lift position (m) |
-| `lift.max_pos` | `0.4` | Maximum lift position (m) |
-| `gripper.left_set_pos_topic` | `/m2_gz_simulation/gripper/left/cmd_pos` | Left finger position topic |
-| `gripper.right_set_pos_topic` | `/m2_gz_simulation/gripper/right/cmd_pos` | Right finger position topic |
-| `gripper.closed_displacement` | `0.0` | Displacement per finger when closed (m) |
-| `gripper.open_displacement` | `0.08` | Displacement per finger when open (m) |
+## Configuration and topic contract
 
-### control_node_params.yaml
+- `config/control_node_params.yaml`: separate position/velocity gains, speed/ramp
+  limits and force/torque limits for lift/yaw. Lift gravity feedforward is 39.24 N
+  (4 kg moving assembly); the inner integral supplies the additional payload force.
+- `config/fsm_node_params.yaml`: input, completion thresholds, lift endpoints and
+  gripper displacements. `at_target()` tolerances use metres for lift/fingers and
+  radians for yaw.
+- `config/ros_gz_bridge.yaml`: all ROS/Gazebo mappings and directions, including
+  contacts, chassis Twist/odometry and model poses used by regression tests.
 
-| Parameter | Default | Description |
-|---|---|---|
-| `loop_freq` | `100` | Control loop rate (Hz) |
-| `joint_states_topic` | `/m2_gz_simulation/joint_states` | Gazebo joint state feedback |
-| `feedback_timeout` | `0.25` | Max age of valid feedback (s) |
-| `max_control_dt` | `0.1` | Max allowed simulation time step (s) |
-| `lift.joint_name` | `vertical_to_horizontal` | Lift joint to track |
-| `lift.p_setpoint_topic` | `/m2_gz_simulation/lift/p_setpoint` | Incoming position setpoint |
-| `lift.cmd_vel_topic` | `/m2_gz_simulation/lift/cmd_vel` | Outgoing velocity command |
-| `lift.min_position` | `-0.4` | Lower joint limit (m) |
-| `lift.max_position` | `0.4` | Upper joint limit (m) |
-| `lift.kp` | `3.0` | Outer-loop proportional gain |
-| `lift.ki` | `0.1` | Outer-loop integral gain |
-| `lift.kd` | `0.1` | Outer-loop derivative gain |
-| `lift.integral_limit` | `0.2` | Integral windup clamp |
-| `lift.max_velocity` | `0.25` | Velocity limit (m/s) |
-| `lift.max_acceleration` | `0.8` | Acceleration limit (m/s²) |
+Position requests use metres for lift and radians for the low-level yaw target.
+The degree API is only `/yaw/target_degrees`. In effort mode there is no ROS
+position/speed limiting; Gazebo retains the last force until changed or shut down.
+On feedback loss the ROS controller sends zero effort; this is not a mechanical
+brake, so an unsupported lift can descend under gravity.
 
-### Gazebo bridge topics
-
-Defined in `config/ros_gz_bridge.yaml`:
-
-| Direction | ROS topic | Gazebo topic | Type |
-|---|---|---|---|
-| GZ → ROS | `/keyboard/keypress` | `/keyboard/keypress` | Int32 |
-| GZ → ROS | `/clock` | `/world/arm_world/clock` | Clock |
-| GZ → ROS | `/m2_gz_simulation/joint_states` | `/world/arm_world/model/two_arm_robot/joint_state` | JointState |
-| ROS → GZ | `/m2_gz_simulation/lift/cmd_vel` | `/vertical_to_horizontal/cmd_vel` | Float64 |
-| ROS → GZ | `/m2_gz_simulation/gripper/left/cmd_pos` | `/gripper_left_joint/cmd_pos` | Float64 |
-| ROS → GZ | `/m2_gz_simulation/gripper/right/cmd_pos` | `/gripper_right_joint/cmd_pos` | Float64 |
-
-## Interacting with the simulation
-
-Choose one command source when launching. Stop the previous launch before switching
-modes. Do not publish onto another active node's actuator output: ROS topics do
-not arbitrate between two publishers, so their messages overwrite each other.
-The ROS velocity message is `std_msgs/msg/Float64` in m/s, not `Twist`.
-
-### FSM mode: teach the command/subsystem architecture
+## Tests and model generation
 
 ```bash
-ros2 launch m2_gz_simulation simulation.launch.py command_source:=fsm
-# In another sourced terminal: this schedules set_lift_pos_command.
-ros2 topic pub --once /m2_gz_simulation/lift/target_position std_msgs/msg/Float64 '{data: 0.2}'
-# This schedules gripper_toggle_grip_command.
-ros2 service call /m2_gz_simulation/gripper/toggle std_srvs/srv/Trigger '{}'
-```
-
-`lift/target_position` is a request to the FSM. `lift/p_setpoint` is the subsystem's
-output to the control node. The lift subsystem does not publish a default zero
-before a command is issued. After a command, it continuously republishes that
-target, as in `m2_nezha26`; identical setpoints preserve PID and acceleration state.
-The gripper starts open as before. No PID or Gazebo feedback loop was added to the
-FSM/subsystems.
-
-The default GUI configuration loads **KeyPublisher**. Click the Gazebo scene to
-focus its window, then use these keys (the simulation must be running):
-
-| Key | Enum / value | Command |
-|---|---|---|
-| ↑ | `keyboard_key::UP` / 16777235 | Raise lift to +0.4 m |
-| ↓ | `keyboard_key::DOWN` / 16777237 | Lower assembly to base top, -0.06 m |
-| ← | `keyboard_key::LEFT` / 16777234 | Open grip |
-| → | `keyboard_key::RIGHT` / 16777236 | Close grip |
-| Q | `keyboard_key::Q` / 81 | Sequential: close grip, then raise lift |
-| A | `keyboard_key::A` / 65 | Parallel: open grip and lower lift |
-
-All keys from the supplied screenshot are declared in `base/keyboard_key.h`;
-unassigned keys are ignored. Repeated events for an active action do not restart
-it. Once it finishes, another event can run it again. KeyPublisher sends press
-events without release state, so holding a key may run it again after completion.
-
-The bottom preset follows the current SDF geometry: finger-tip height is
-`0.75 + joint_position - 0.10 - 0.09`; the base top is at `0.50 m`, giving
-`joint_position = -0.06 m`. The SDF lower limit of -0.4 m is still available to
-explicit position requests, but is below the base top. Change
-`lift.bottom_position` if your model or desired lower pose changes.
-
-For a headless keyboard-path check, publish a Gazebo event:
-
-```bash
-gz topic -t /keyboard/keypress -m gz.msgs.Int32 -p 'data: 81'
-# Or inject the equivalent event directly on the ROS side:
-ros2 topic pub --once /keyboard/keypress std_msgs/msg/Int32 '{data: 81}'
-```
-
-The new motion commands wait for fresh feedback within 3 mm and below 0.01 m/s.
-Sequential composition waits for both fingers before starting the raise command;
-parallel composition starts both commands in one scheduler tick and waits for
-both to finish. See [the keyboard/command implementation review](docs/keyboard_commands.md).
-
-### Position mode: test the control node directly
-
-```bash
-ros2 launch m2_gz_simulation simulation.launch.py command_source:=position
-ros2 topic pub --once /m2_gz_simulation/lift/p_setpoint std_msgs/msg/Float64 '{data: 0.2}'
-```
-
-This starts Gazebo, the bridge, and `control_node`, without an FSM that can
-replace your setpoint. Lift positions are joint-relative metres in [-0.4, 0.4].
-Both the subsystem and control node retain their existing clamping behavior.
-
-With no FSM running, direct gripper tests also have a single producer:
-
-```bash
-ros2 topic pub --once /m2_gz_simulation/gripper/left/cmd_pos std_msgs/msg/Float64 '{data: 0.08}'
-ros2 topic pub --once /m2_gz_simulation/gripper/right/cmd_pos std_msgs/msg/Float64 '{data: -0.08}'
-```
-
-### Velocity mode: test the bridge and Gazebo actuator
-
-```bash
-ros2 launch m2_gz_simulation simulation.launch.py command_source:=velocity
-ros2 topic pub --once /m2_gz_simulation/lift/cmd_vel std_msgs/msg/Float64 '{data: 0.1}'
-# Stop the motion explicitly; Gazebo retains its last velocity command.
-ros2 topic pub --once /m2_gz_simulation/lift/cmd_vel std_msgs/msg/Float64 '{data: 0.0}'
-```
-
-This starts neither the FSM nor the ROS PID. Gazebo's inner velocity controller
-still runs. Manual velocity commands bypass the ROS position/velocity limits;
-use them for short, supervised actuator tests within the SDF joint limits.
-
-To inspect the active command source and feedback:
-
-```bash
-ros2 topic info -v /m2_gz_simulation/lift/p_setpoint
-ros2 topic info -v /m2_gz_simulation/lift/cmd_vel
-ros2 topic echo /m2_gz_simulation/joint_states
-```
-
-## Tests and architecture review
-
-```bash
-colcon build --packages-select m2_gz_simulation --cmake-args -DBUILD_TESTING=ON
-source install/setup.bash
 colcon test --packages-select m2_gz_simulation
 colcon test-result --test-result-base build/m2_gz_simulation --verbose
 python3 src/m2_gz_simulation/test/simulation_smoke.py
+# A shorter individual mode run:
+python3 src/m2_gz_simulation/test/simulation_smoke.py --mode fsm
 ```
 
-Six controller C++ tests cover repeated setpoints, integral persistence, acceleration limits,
-feedback loss/reset, invalid measurements and command-gated subsystem output.
-Five additional C++ tests cover Int32 keyboard routing, sequential/parallel completion, interruption and stale feedback.
-The opt-in Gazebo test runs all three launch modes in an isolated test domain and
-partition, checking positive/negative goals, continuous FSM setpoints, gripper
-commands, pause/reset recovery, manual velocity and clean shutdown. It also injects
-all six keyboard actions on Gazebo Transport and verifies sequential ordering and
-concurrent motion through the actual bridge.
-See [the architecture/debug review](docs/sim_robot_review.md) for the comparison
-with `main`, reproduced failure, fixes, and remaining teaching tradeoffs.
+The C++ tests cover cascaded dynamics, payload compensation, feedback faults,
+commands, groups, key ownership, yaw bounds and contact completion. Static tests
+check dimensions, storage containment, four-wheel/actuator ownership and the bridge.
+Headless tests check real grasp/lift/rotation/release, degree wrap, chassis keys,
+position/effort modes, pause/reset recovery and clean shutdown.
 
-## Model
+`model/two_arm_robot.sdf` is generated by `scripts/generate_world.py`; edit that
+script and regenerate when changing mechanics. The imported field and its source
+commit are under `model/robocon_ground/`. `scripts/import_venue.py --source PATH`
+reproduces the import from the cloned repository. Models are installed with the
+package; launching needs no network connection.
 
-The SDF model (`model/two_arm_robot.sdf`) defines:
-- **`vertical_to_horizontal`** — prismatic joint (Z-axis, ±0.4 m)
-- **`gripper_left_joint`** — prismatic (Y-axis, 0–0.08 m)
-- **`gripper_right_joint`** — prismatic (Y-axis, −0.08–0 m)
-
-Gazebo plugins: `JointStatePublisher` (100 Hz feedback), `JointController` (lift velocity PID), `JointPositionController` ×2 (gripper position).
-
-## Known limitations
-
-1. **Legacy versus motion commands:** `set_lift_pos_command` and
-   `gripper_toggle_grip_command` still finish when issued. The new keyboard
-   commands finish on measured motion completion. `is_gripped()` remains the
-   requested state; `at_target()` checks joint feedback, not contact with an object.
-2. **Blocked motion:** missing/stale feedback or an obstructed joint keeps a new
-   motion command pending; it does not silently advance the sequence. There is no
-   automatic timeout/failed-command state yet. Conflicting actions can interrupt
-   commands/groups, but cancellation leaves actuator targets latched until replaced.
-3. **Discrete position goals:** changed position targets reset the PID, while
-   identical targets preserve it. Continuous trajectory streaming would need a
-   separate review of reset policy and acceleration continuity.
-4. **Keyboard mode:** a single `test_mode` is active; no PS message conversion,
-   controller LED service or multi-mode selection is used. The GUI must have focus.
-5. **Fallible initialization is noexcept:** several inherited/template setup paths
-   terminate on exceptions. Loop rates are now restricted to [1, 1000] Hz, but
-   further parameter-validation/error-handling improvements remain possible.
-6. **Transport and reset policy:** launch supervises process exits, not frozen
-   processes. Invalid feedback inhibits velocity; the latest target resumes after
-   fresh feedback returns. A world reset does not cancel the FSM's desired target.
-
-## Directory layout
-
-```
-m2_gz_simulation/
-├── CMakeLists.txt
-├── package.xml
-├── cmake/                   # M2Build cmake modules
-├── code/
-│   ├── CMakeLists.txt
-│   ├── include/m2_gz_simulation/
-│   │   ├── base/            # simulation_robot, subsystem_container, define
-│   │   ├── commands/        # lift/set_lift_pos, gripper/toggle_grip
-│   │   ├── control/         # joint_feedback, lift_controller, position_pid
-│   │   ├── modes/           # test_mode
-│   │   ├── nodes/           # fsm_node, control_node
-│   │   └── subsystems/      # lift_subsystem, gripper_subsystem
-│   └── src/
-│       ├── base/
-│       ├── commands/
-│       ├── control/
-│       ├── modes/
-│       ├── nodes/{fsm,control}/
-│       └── subsystems/
-├── config/
-│   ├── fsm_node_params.yaml
-│   ├── control_node_params.yaml
-│   └── ros_gz_bridge.yaml
-├── launch/
-│   ├── simulation.launch.py
-│   └── ros_gz_bridge.launch.py
-├── model/
-│   └── two_arm_robot.sdf
-└── test/
-    ├── control_test.cpp
-    └── simulation_smoke.py
-```
+See [the implementation review](docs/robocon_2027.md) for a file map, design decisions,
+source references and measured test results. Earlier review documents are historical.

@@ -13,8 +13,8 @@ namespace m2::gz_simulation {
 // The subsystem's node outlives this helper. Used on the single ROS executor.
 class motion_completion {
 public:
-    motion_completion(rclcpp::Node& node, std::vector<std::string> joints)
-        : node_(node), joints_(std::move(joints))
+    motion_completion(rclcpp::Node& node, std::vector<std::string> joints, bool angular = false)
+        : node_(node), joints_(std::move(joints)), angular_(angular)
     {
         if (!node.has_parameter("completion.joint_states_topic")) {
             node.declare_parameter<std::string>("completion.joint_states_topic", "/m2_gz_simulation/joint_states");
@@ -54,7 +54,7 @@ public:
             std::chrono::steady_clock::now() - received_).count();
         if (age < -timeout_ || age > timeout_ || wall_age > timeout_) { return false; }
         for (std::size_t i = 0; i < targets.size(); ++i) {
-            if (!std::isfinite(targets[i]) || std::abs(positions_[i] - targets[i]) > position_tolerance_ ||
+            if (!std::isfinite(targets[i]) || std::abs(angular_ ? std::remainder(positions_[i] - targets[i], 6.283185307179586) : positions_[i] - targets[i]) > position_tolerance_ ||
                 std::abs(velocities_[i]) > velocity_tolerance_) { return false; }
         }
         return true;
@@ -68,5 +68,6 @@ private:
     double stamp_{0.0}, position_tolerance_, velocity_tolerance_, timeout_;
     std::chrono::steady_clock::time_point received_;
     bool valid_{false};
+    bool angular_{false};
 };
 }  // namespace m2::gz_simulation

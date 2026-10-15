@@ -37,9 +37,9 @@ private:
 
     rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr lift_pos_pub_;
 
-    double bottom_pos_{-0.06};
-    double min_pos_{-0.4};
-    double max_pos_{0.4};
+    double bottom_pos_{0.0};
+    double min_pos_{0.0};
+    double max_pos_{1.1};
 
     // This is the position target / p setpoint.
     // Commands update it; tick() republishes it continuously.

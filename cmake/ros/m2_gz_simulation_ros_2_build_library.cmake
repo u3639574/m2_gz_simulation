@@ -1,6 +1,7 @@
 find_package(std_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(ros_gz_interfaces REQUIRED)
 find_package(m2_interfaces REQUIRED)
 find_package(trolly REQUIRED)
 find_package(m2_fsm_cpp REQUIRED)
@@ -17,6 +18,7 @@ function(m2_gz_simulation_ros2_add_object_library object_name)
             std_msgs
             std_srvs
             sensor_msgs
+            ros_gz_interfaces
             m2_interfaces
             ${ARG_AMENT_DEPENDS}
     )
@@ -36,6 +38,7 @@ function(m2_gz_simulation_ros2_add_library target_name)
             std_msgs
             std_srvs
             sensor_msgs
+            ros_gz_interfaces
             m2_interfaces
             ${ARG_AMENT_DEPENDS}
     )
@@ -56,6 +59,7 @@ function(m2_gz_simulation_ros2_add_executable target_name)
             std_msgs
             std_srvs
             sensor_msgs
+            ros_gz_interfaces
             m2_interfaces
             ${ARG_AMENT_DEPENDS}
     )

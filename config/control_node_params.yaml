@@ -1,22 +1,28 @@
 /m2_gz_simulation/control_node:
   ros__parameters:
-    loop_freq: 100
-
+    loop_freq: 200
     joint_states_topic: /m2_gz_simulation/joint_states
     feedback_timeout: 0.25
     max_control_dt: 0.1
-
     lift:
       joint_name: vertical_to_horizontal
       p_setpoint_topic: /m2_gz_simulation/lift/p_setpoint
-      cmd_vel_topic: /m2_gz_simulation/lift/cmd_vel
-
-      min_position: -0.4
-      max_position: 0.4
-
-      kp: 3.0
-      ki: 0.1
-      kd: 0.1
-      integral_limit: 0.2
-      max_velocity: 0.25
-      max_acceleration: 0.8
+      effort_topic: /m2_gz_simulation/lift/cmd_effort
+      min_position: 0.0
+      max_position: 1.1
+      position: {kp: 3.0, ki: 0.0, kd: 0.05, integral_limit: 0.2}
+      velocity: {kp: 100.0, ki: 180.0, kd: 0.3, integral_limit: 30.0}
+      max_velocity: 0.3
+      max_acceleration: 0.6
+      max_effort: 120.0
+      feedforward: 39.24  # (3kg beam + 2*0.5kg fingers) * 9.81; payload learned by I.
+    yaw:
+      joint_name: base_to_vertical
+      p_setpoint_topic: /m2_gz_simulation/yaw/p_setpoint
+      effort_topic: /m2_gz_simulation/yaw/cmd_effort
+      position: {kp: 3.0, ki: 0.0, kd: 0.05, integral_limit: 0.2}
+      velocity: {kp: 12.0, ki: 8.0, kd: 0.1, integral_limit: 10.0}
+      max_velocity: 0.7
+      max_acceleration: 1.0
+      max_effort: 20.0
+      feedforward: 0.0

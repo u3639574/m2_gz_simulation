@@ -11,7 +11,7 @@ struct subsystem_container_t {
     fsm::subsystem_instance_id_t lift_subsystem{
         fsm::SUBSYSTEM_INSTANCE_ID_INVALID};
 
-    // Add more Gazebo-simulation subsystems here.
+    fsm::subsystem_instance_id_t yaw_subsystem{fsm::SUBSYSTEM_INSTANCE_ID_INVALID};
 };
 
 inline subsystem_container_t g_subsystem_container;

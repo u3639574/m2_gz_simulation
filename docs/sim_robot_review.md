@@ -1,5 +1,9 @@
 # Review of `sim_robot` and the setpoint failure
 
+Historical review from the earlier stationary-arm implementation. For the current
+competition robot, controls, units and test results, see [robocon_2027.md](robocon_2027.md).
+
+
 This records the earlier setpoint-debugging change. The subsequent keyboard work
 implements motion completion and replaces the PS input scaffold; see
 [keyboard_commands.md](keyboard_commands.md) for the current implementation.

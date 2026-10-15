@@ -1,5 +1,9 @@
 # Keyboard FSM and composite commands
 
+Historical review from the earlier stationary-arm implementation. For the current
+competition robot, controls, units and test results, see [robocon_2027.md](robocon_2027.md).
+
+
 ## Architecture
 
 The structure follows `m2_nezha26`: input belongs to a mode, modes schedule commands,

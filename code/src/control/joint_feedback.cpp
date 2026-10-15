@@ -9,30 +9,21 @@
 namespace m2::gz_simulation {
 
 joint_feedback::joint_feedback(
-    std::shared_ptr<rclcpp::Node> node)
+    std::shared_ptr<rclcpp::Node> node, const std::string& prefix, const std::string& joint_name)
     : node_(node.get())
 {
-    node_->declare_parameter<std::string>(
-        "joint_states_topic",
-        "/m2_gz_simulation/joint_states");
-
-    node_->declare_parameter<std::string>(
-        "lift.joint_name",
-        "vertical_to_horizontal");
-
-    node_->declare_parameter<double>(
-        "feedback_timeout",
-        0.25);
-
-    node_->declare_parameter<double>(
-        "max_control_dt",
-        0.1);
+    if (!node_->has_parameter("joint_states_topic")) {
+        node_->declare_parameter<std::string>("joint_states_topic", "/m2_gz_simulation/joint_states");
+        node_->declare_parameter<double>("feedback_timeout", 0.25);
+        node_->declare_parameter<double>("max_control_dt", 0.1);
+    }
+    node_->declare_parameter<std::string>(prefix + ".joint_name", joint_name);
 
     const auto joint_states_topic =
         node_->get_parameter("joint_states_topic").as_string();
 
     lift_joint_name_ =
-        node_->get_parameter("lift.joint_name").as_string();
+        node_->get_parameter(prefix + ".joint_name").as_string();
 
     feedback_timeout_ =
         node_->get_parameter("feedback_timeout").as_double();
@@ -53,7 +44,7 @@ joint_feedback::joint_feedback(
         joint_states_topic.c_str());
 
     TROLLY_INFO(
-        "[joint_feedback] Lift joint name: %s",
+        "[joint_feedback] Tracked joint: %s",
         lift_joint_name_.c_str());
 }
 

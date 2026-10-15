@@ -1,5 +1,6 @@
 """Launch the Gazebo world, ROS/Gazebo bridge, FSM, and lift control node."""
 
+import os
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
@@ -32,6 +33,9 @@ def launch_nodes(context):
             '3',
             world,
         ],
+        additional_env={'GZ_SIM_RESOURCE_PATH': os.pathsep.join(filter(None, [
+            PathJoinSubstitution([FindPackageShare('m2_gz_simulation'), 'model']).perform(context),
+            os.environ.get('GZ_SIM_RESOURCE_PATH', '')]))},
         name='gazebo',
         output='screen',
         on_exit=[
@@ -73,13 +77,13 @@ def launch_nodes(context):
         output='screen',
     )
 
-    # Exactly one producer at each control layer. Terminal velocity tests must
+    # Exactly one producer at each control layer. Terminal effort tests must
     # not compete with control_node; terminal position tests must not compete
     # with the FSM's continuously published setpoint.
     processes = [bridge]
     if command_source == 'fsm':
         processes.append(fsm)
-    if command_source != 'velocity':
+    if command_source != 'effort':
         processes.append(control)
 
     # Gazebo's controller can retain its last command if the ROS-side
@@ -108,9 +112,9 @@ def generate_launch_description():
 
     return LaunchDescription([
         DeclareLaunchArgument(
-            'command_source', default_value='fsm', choices=['fsm', 'position', 'velocity'],
+            'command_source', default_value='fsm', choices=['fsm', 'position', 'effort'],
             description='fsm: commands/subsystems; position: direct p_setpoint; '
-                        'velocity: direct cmd_vel (no FSM or ROS PID)',
+                        'effort: direct cmd_effort (no FSM or ROS PID)',
         ),
         DeclareLaunchArgument(
             'gui_config',

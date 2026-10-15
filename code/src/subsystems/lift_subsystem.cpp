@@ -15,10 +15,10 @@ lift_subsystem::lift_subsystem(std::shared_ptr<rclcpp::Node> node) noexcept
         "lift.set_pos_topic",
         "lift/p_setpoint");
 
-    node_->declare_parameter<double>("lift.min_pos", -0.4);
-    node_->declare_parameter<double>("lift.max_pos", 0.4);
+    node_->declare_parameter<double>("lift.min_pos", 0.0);
+    node_->declare_parameter<double>("lift.max_pos", 1.1);
 
-    node_->declare_parameter<double>("lift.bottom_position", -0.06);
+    node_->declare_parameter<double>("lift.bottom_position", 0.0);
 
     min_pos_ = node_->get_parameter("lift.min_pos").as_double();
     max_pos_ = node_->get_parameter("lift.max_pos").as_double();

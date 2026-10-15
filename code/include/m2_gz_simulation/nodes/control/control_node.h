@@ -27,6 +27,8 @@ private:
 
     std::unique_ptr<joint_feedback> feedback_;
     std::unique_ptr<lift_controller> lift_controller_;
+    std::unique_ptr<joint_feedback> yaw_feedback_;
+    std::unique_ptr<joint_controller> yaw_controller_;
 
     rclcpp::TimerBase::SharedPtr timer_;
 

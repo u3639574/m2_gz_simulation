@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""Opt-in Gazebo regressions for the three command sources; source ROS first."""
+"""Real Gazebo regressions: field, cube grasp, cascade, yaw, tutorial chassis.
+Source install/setup.bash, then run this script. No GUI is required.
+"""
+import argparse
 import json
+import math
 import os
 from pathlib import Path
-import re
 import signal
 import subprocess
 import tempfile
@@ -13,211 +16,230 @@ import rclpy
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Float64
-from std_srvs.srv import Trigger
+from geometry_msgs.msg import Twist
+from tf2_msgs.msg import TFMessage
+from ros_gz_interfaces.msg import Contacts
+from nav_msgs.msg import Odometry
 
 
-def run_mode(mode, root):
-    os.environ['ROS_DOMAIN_ID'] = '173'
-    os.environ['GZ_PARTITION'] = f'm2_sim_robot_test_{os.getpid()}_{mode}'
-    os.environ['ROS_LOG_DIR'] = str(root / 'ros_logs')
-    for key in ('ROS_DISCOVERY_SERVER', 'ROS_SUPER_CLIENT',
-                'FASTRTPS_DEFAULT_PROFILES_FILE', 'FASTDDS_DEFAULT_PROFILES_FILE'):
-        os.environ.pop(key, None)
-    log_path = root / f'{mode}.log'
-    log = log_path.open('w')
-    process = subprocess.Popen(
-        ['ros2', 'launch', 'm2_gz_simulation', 'simulation.launch.py',
-         'gui:=false', f'command_source:={mode}'],
-        stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
-    rclpy.init()
-    node = rclpy.create_node(f'smoke_{mode}')
-    state = {}
-    velocities = []
-    setpoints = []
-    result = {}
+class Simulation:
+    def __init__(self, mode, root):
+        os.environ['ROS_DOMAIN_ID'] = '175'
+        os.environ['GZ_PARTITION'] = f'm2_robocon_{os.getpid()}_{mode}'
+        os.environ['ROS_LOG_DIR'] = str(root / 'ros_logs')
+        for key in ('ROS_DISCOVERY_SERVER', 'ROS_SUPER_CLIENT',
+                    'FASTRTPS_DEFAULT_PROFILES_FILE', 'FASTDDS_DEFAULT_PROFILES_FILE'):
+            os.environ.pop(key, None)
+        self.log_path = root / f'{mode}.log'
+        self.log = self.log_path.open('w')
+        self.process = subprocess.Popen([
+            'ros2', 'launch', 'm2_gz_simulation', 'simulation.launch.py',
+            'gui:=false', f'command_source:={mode}'], stdout=self.log,
+            stderr=subprocess.STDOUT, start_new_session=True)
+        rclpy.init(); self.node = rclpy.create_node('robocon_smoke_' + mode)
+        self.state = {}; self.poses = {}; self.contact = {}; self.effort = {}; self.velocity_target = {}
+        self.odom = None; self.subs = []
+        self.subs.append(self.node.create_subscription(JointState,
+            '/m2_gz_simulation/joint_states', self.joints, qos_profile_sensor_data))
+        for name in ('two_arm_robot', 'earth_block_1', 'earth_block_2', 'earth_block_3'):
+            self.subs.append(self.node.create_subscription(TFMessage,
+                '/m2_gz_simulation/poses/' + name, self.pose, qos_profile_sensor_data))
+        for side in ('left', 'right'):
+            self.subs.append(self.node.create_subscription(Contacts,
+                f'/m2_gz_simulation/gripper/{side}/contacts',
+                lambda msg, s=side: self.contacts(s, msg), qos_profile_sensor_data))
+        for axis in ('lift', 'yaw'):
+            self.subs.append(self.node.create_subscription(Float64,
+                f'/m2_gz_simulation/{axis}/cmd_effort',
+                lambda msg, a=axis: self.effort.update({a: msg.data}), 10))
+            self.subs.append(self.node.create_subscription(Float64,
+                f'/m2_gz_simulation/{axis}/velocity_target',
+                lambda msg, a=axis: self.velocity_target.update({a: msg.data}), 10))
+        self.subs.append(self.node.create_subscription(Odometry,
+            '/m2_gz_simulation/chassis/odometry',
+            lambda msg: setattr(self, 'odom', msg), qos_profile_sensor_data))
+        self.drive = self.node.create_publisher(Twist, '/m2_gz_simulation/chassis/cmd_vel', 1)
+        self.publishers = {}
 
-    def receive(msg):
+    def joints(self, msg):
         for name, position, velocity in zip(msg.name, msg.position, msg.velocity):
-            state[name] = (position, velocity)
+            self.state[name] = (position, velocity)
 
-    subscriptions = [
-        node.create_subscription(JointState, '/m2_gz_simulation/joint_states',
-                                 receive, qos_profile_sensor_data),
-        node.create_subscription(Float64, '/m2_gz_simulation/lift/cmd_vel',
-                                 lambda msg: velocities.append(msg.data), 10),
-        node.create_subscription(Float64, '/m2_gz_simulation/lift/p_setpoint',
-                                 lambda msg: setpoints.append(msg.data), 10)]
+    def pose(self, msg):
+        for t in msg.transforms:
+            q = t.transform.rotation
+            yaw = math.atan2(2*(q.w*q.z+q.x*q.y), 1-2*(q.y*q.y+q.z*q.z))
+            self.poses[t.child_frame_id] = (
+                t.transform.translation.x, t.transform.translation.y,
+                t.transform.translation.z, yaw)
 
-    def wait(predicate, timeout=12):
-        deadline = time.monotonic() + timeout
+    def contacts(self, side, msg):
+        names = {name.split('::')[0] for c in msg.contacts
+                 for name in (c.collision1.name, c.collision2.name) if name.startswith('earth_block_')}
+        self.contact[side] = (names, time.monotonic())
+
+    def gripping(self):
+        now = time.monotonic()
+        return all(side in self.contact and 'earth_block_1' in self.contact[side][0] and
+                   now-self.contact[side][1] < .25 for side in ('left', 'right'))
+
+    def wait(self, predicate, timeout=20):
+        deadline = time.monotonic()+timeout
         while time.monotonic() < deadline:
-            if process.poll() is not None:
-                raise AssertionError(f'{mode} launch exited: {process.returncode}')
-            rclpy.spin_once(node, timeout_sec=0.01)
-            if predicate():
-                return
-        raise AssertionError(f'{mode} timed out: state={state}, velocity={velocities[-5:]}')
+            if self.process.poll() is not None:
+                raise AssertionError(f'Launch exited; see {self.log_path}')
+            rclpy.spin_once(self.node, timeout_sec=.005)
+            if predicate(): return
+        raise AssertionError(f'Timeout: state={self.state}, poses={self.poses}, effort={self.effort}')
 
-    def spin_for(seconds):
-        until = time.monotonic() + seconds
-        wait(lambda: time.monotonic() >= until, seconds + 2)
+    def spin(self, seconds):
+        until = time.monotonic()+seconds
+        self.wait(lambda: time.monotonic() >= until, seconds+3)
 
-    def publisher(topic):
-        pub = node.create_publisher(Float64, f'/m2_gz_simulation/{topic}', 1)
-        wait(lambda: pub.get_subscription_count() > 0)
-        spin_for(0.05)
-        return pub
+    def key(self, code):
+        response = subprocess.run(['gz', 'topic', '-t', '/keyboard/keypress',
+            '-m', 'gz.msgs.Int32', '-p', f'data: {code}'], capture_output=True, text=True, timeout=5)
+        assert response.returncode == 0, response.stderr
+        self.spin(.05)
 
-    def settled(target):
-        position, velocity = state['vertical_to_horizontal']
-        return abs(position - target) < 0.004 and abs(velocity) < 0.01
+    def scalar(self, topic, value):
+        if topic not in self.publishers:
+            pub = self.node.create_publisher(Float64, '/m2_gz_simulation/'+topic, 1)
+            self.publishers[topic] = pub
+            self.wait(lambda: pub.get_subscription_count() > 0)
+        self.publishers[topic].publish(Float64(data=float(value)))
 
-    def control_world(request):
-        response = subprocess.run([
-            'gz', 'service', '-s', '/world/arm_world/control',
+    def settled(self, name, goal, tolerance=.005, angular=False):
+        q, v = self.state[name]
+        error = math.remainder(q-goal, 2*math.pi) if angular else q-goal
+        return abs(error)<tolerance and abs(v)<.01
+
+    def world_control(self, request):
+        completed = subprocess.run(['gz', 'service', '-s', '/world/arm_world/control',
             '--reqtype', 'gz.msgs.WorldControl', '--reptype', 'gz.msgs.Boolean',
-            '--timeout', '3000', '--req', request],
-            capture_output=True, text=True, timeout=5)
-        assert response.returncode == 0 and 'data: true' in response.stdout
+            '--timeout', '3000', '--req', request], capture_output=True, text=True, timeout=5)
+        assert completed.returncode == 0 and 'data: true' in completed.stdout
 
+    def close(self):
+        self.drive.publish(Twist())
+        self.node.destroy_node(); rclpy.shutdown()
+        if self.process.poll() is None: self.process.send_signal(signal.SIGINT)
+        try: self.process.wait(timeout=15)
+        except subprocess.TimeoutExpired:
+            os.killpg(self.process.pid, signal.SIGKILL); self.process.wait(timeout=5)
+        self.log.close()
+        text = self.log_path.read_text()
+        assert self.process.returncode == 0, text[-3000:]
+        assert 'process has died' not in text and 'escalating to' not in text, text[-3000:]
+        assert 'Error in destruction' not in text, text[-3000:]
+
+
+def run(mode, root):
+    sim = Simulation(mode, root); result = {}
     try:
-        wait(lambda: len(state) == 3, 25)
-        spin_for(0.5)  # Allow feedback/command discovery to settle.
-        if mode == 'velocity':
-            assert not node.get_publishers_info_by_topic('/m2_gz_simulation/lift/cmd_vel')
-            velocity = publisher('lift/cmd_vel')
-            before = state['vertical_to_horizontal'][0]
-            velocity.publish(Float64(data=0.1))
-            spin_for(1.0)
-            delta = state['vertical_to_horizontal'][0] - before
-            assert 0.07 < delta < 0.13, delta
-            velocity.publish(Float64(data=0.0))
-            spin_for(0.3)
-            assert abs(state['vertical_to_horizontal'][1]) < 0.01
-            result['travel_at_0_1_m_s'] = delta
+        sim.wait(lambda: len(sim.state)==4 and len(sim.poses)==4 and sim.odom is not None, 35)
+        sim.spin(1)
+        for i, y in enumerate((3.85, 4.45, 5.05), 1):
+            pose = sim.poses[f'earth_block_{i}']
+            assert abs(pose[0]-4.95)<.005 and abs(pose[1]-y)<.005
+            assert abs(pose[2]-.175)<.005
+        result['three_blocks_on_storage_floor'] = True
+        if mode == 'fsm':
+            sim.wait(lambda: sim.settled('gripper_left_joint',.22))
+            # Stage the robot at the first block. The tested arrow mapping is below.
+            msg = Twist(); msg.linear.x=.15; sim.drive.publish(msg)
+            sim.wait(lambda: sim.poses['two_arm_robot'][0] >= 4.04, 10)
+            sim.drive.publish(Twist()); sim.spin(.7)
+            initial_height = sim.poses['earth_block_1'][2]
+            sim.key(81)  # Q: contact-confirmed close -> raise
+            sim.wait(lambda: sim.gripping())
+            sim.wait(lambda: sim.settled('vertical_to_horizontal',1.1), 20)
+            sim.spin(1)
+            result['lifted_block_height_m'] = sim.poses['earth_block_1'][2]
+            assert result['lifted_block_height_m']-initial_height > 1.05
+            assert sim.gripping()
+            result['loaded_lift_effort_N'] = sim.effort['lift']
+            assert 40 < sim.effort['lift'] < 55
+            # Full yaw presets with a real payload retained by friction.
+            sim.key(70)  # F: 180 degrees
+            sim.wait(lambda: sim.settled('base_to_vertical',math.pi,angular=True), 20)
+            assert sim.poses['earth_block_1'][2] > 1.20 and sim.gripping()
+            sim.key(82)  # R: zero
+            sim.wait(lambda: sim.settled('base_to_vertical',0,angular=True), 20)
+            assert sim.poses['earth_block_1'][2] > 1.20 and sim.gripping()
+            result['payload_retained_through_yaw'] = True
+            # Lower while still gripping, then release; also test basic S/E/W/D.
+            sim.key(83); sim.wait(lambda: sim.settled('vertical_to_horizontal',0))
+            sim.key(69); sim.wait(lambda: sim.settled('gripper_left_joint',.22))
+            sim.wait(lambda: abs(sim.poses['earth_block_1'][2]-.175)<.01)
+            sim.key(87); sim.wait(lambda: sim.settled('vertical_to_horizontal',1.1))
+            sim.key(68); sim.wait(lambda: sim.settled('gripper_left_joint',0))
+            sim.key(65)  # A: parallel open and lower
+            sim.wait(lambda: sim.state['vertical_to_horizontal'][1]<-.01 and sim.state['gripper_left_joint'][0]>.01)
+            sim.wait(lambda: sim.settled('vertical_to_horizontal',0) and sim.settled('gripper_left_joint',.22))
+            result['parallel_open_and_lower'] = True
+            # Degree API validates range before scheduling. 359 -> 1 uses short arc.
+            sim.scalar('yaw/target_degrees',359)
+            sim.wait(lambda: sim.settled('base_to_vertical',math.radians(359),angular=True))
+            before = sim.state['base_to_vertical'][0]
+            sim.scalar('yaw/target_degrees',1)
+            sim.wait(lambda: sim.settled('base_to_vertical',math.radians(1),angular=True))
+            assert abs(sim.state['base_to_vertical'][0]-before)<.15
+            sim.scalar('yaw/target_degrees',360); sim.spin(.3)
+            assert sim.settled('base_to_vertical',math.radians(1),angular=True)
+            result['degree_api_shortest_path_and_rejection'] = True
+            # Tutorial TriggeredPublisher -> DiffDrive chain, including stop.
+            for key, linear_sign, angular_sign in ((16777235,1,0),(16777237,-1,0),(16777234,0,1),(16777236,0,-1)):
+                before = sim.poses['two_arm_robot']
+                sim.key(key)
+                sim.wait(lambda: (sim.odom.twist.twist.linear.x*linear_sign>.05 if linear_sign else
+                                  sim.odom.twist.twist.angular.z*angular_sign>.1), 6)
+                sim.spin(.3)
+                after = sim.poses['two_arm_robot']
+                if linear_sign:
+                    travel = ((after[0]-before[0])*math.cos(before[3]) +
+                              (after[1]-before[1])*math.sin(before[3]))
+                    assert travel*linear_sign > .03, (key, before, after)
+                else:
+                    assert math.remainder(after[3]-before[3],2*math.pi)*angular_sign > .03, (key,before,after)
+                sim.key(88)
+                sim.wait(lambda: abs(sim.odom.twist.twist.linear.x)<.005 and abs(sim.odom.twist.twist.angular.z)<.005)
+            result['four_arrow_directions_and_stop'] = True
+        elif mode == 'position':
+            assert not sim.node.get_publishers_info_by_topic('/m2_gz_simulation/lift/p_setpoint')
+            for goal in (.5, 1.0, .2):
+                sim.scalar('lift/p_setpoint', goal)
+                sim.wait(lambda: sim.settled('vertical_to_horizontal',goal))
+            sim.scalar('yaw/p_setpoint', math.pi/2)
+            sim.wait(lambda: sim.settled('base_to_vertical',math.pi/2,angular=True))
+            sim.world_control('pause: true'); sim.spin(.5)
+            assert sim.effort['lift']==0 and sim.effort['yaw']==0
+            sim.world_control('pause: false')
+            sim.wait(lambda: sim.settled('vertical_to_horizontal',.2))
+            sim.world_control('reset: {all: true}'); sim.spin(.5)
+            sim.scalar('lift/p_setpoint',.4)
+            sim.wait(lambda: sim.settled('vertical_to_horizontal',.4))
+            result['isolated_cascade_pause_reset'] = True
         else:
-            if mode == 'fsm':
-                assert not setpoints, 'FSM must not command zero before an explicit target'
-                goal = publisher('lift/target_position')
-            else:
-                assert not node.get_publishers_info_by_topic('/m2_gz_simulation/lift/p_setpoint')
-                goal = publisher('lift/p_setpoint')
-            goal.publish(Float64(data=0.2))
-            wait(lambda: settled(0.2))
-            spin_for(0.4)
-            assert settled(0.2)
-            result['positive_target_position'] = state['vertical_to_horizontal'][0]
-            # Fails if repeated setpoints restart the acceleration ramp at ~0.008.
-            assert max(velocities) > 0.1
-            goal.publish(Float64(data=-0.2))
-            wait(lambda: settled(-0.2))
-            result['negative_target_position'] = state['vertical_to_horizontal'][0]
-            assert max(abs(v) for v in velocities) <= 0.250001
-            result['max_commanded_velocity'] = max(abs(v) for v in velocities)
-            if mode == 'fsm':
-                assert len(setpoints) > 100, 'Verify the real continuous FSM setpoint stream'
-                toggle = node.create_client(Trigger, '/m2_gz_simulation/gripper/toggle')
-                assert toggle.wait_for_service(timeout_sec=3)
-                future = toggle.call_async(Trigger.Request())
-                wait(future.done)
-                assert future.result().success
-                wait(lambda: abs(state['gripper_left_joint'][0]) < 0.002 and
-                     abs(state['gripper_right_joint'][0]) < 0.002)
-                result['gripper_command_scheduled'] = True
-                goal.publish(Float64(data=0.3)); spin_for(0.1)
-                control_world('pause: true'); spin_for(0.5)
-                assert abs(velocities[-1]) < 1e-12
-                control_world('pause: false')
-                wait(lambda: settled(0.3))
-                result['pause_resume'] = True
-                control_world('reset: {all: true}')
-                spin_for(0.5)
-                goal.publish(Float64(data=0.1))
-                wait(lambda: settled(0.1))
-                result['reset_recovery'] = True
-                # Inject on Gazebo Transport: exercises the real Int32 bridge and mode.
-                def key(code):
-                    completed = subprocess.run([
-                        'gz', 'topic', '-t', '/keyboard/keypress', '-m', 'gz.msgs.Int32',
-                        '-p', f'data: {code}'], capture_output=True, text=True, timeout=5)
-                    assert completed.returncode == 0, completed.stderr
-
-                def grip_at(displacement):
-                    return all(abs(state[name][0] - target) < 0.003 and
-                               abs(state[name][1]) < 0.01 for name, target in (
-                                   ('gripper_left_joint', displacement),
-                                   ('gripper_right_joint', -displacement)))
-
-                key(16777237)  # DOWN: assembly at base top, not the lower SDF limit.
-                wait(lambda: settled(-0.06)); spin_for(0.15)
-                key(16777234)  # LEFT / open
-                wait(lambda: grip_at(0.08)); spin_for(0.15)
-                key(16777236)  # RIGHT / close
-                wait(lambda: grip_at(0.0)); spin_for(0.15)
-                key(16777235)  # UP
-                wait(lambda: settled(0.4)); spin_for(0.15)
-                key(16777237)
-                wait(lambda: settled(-0.06)); spin_for(0.15)
-                key(16777234)
-                wait(lambda: grip_at(0.08)); spin_for(0.15)
-
-                # Lift target must remain at bottom until both fingers have closed.
-                setpoints.clear()
-                key(81)  # Q: sequential close then raise
-                wait(lambda: bool(setpoints) and setpoints[-1] == 0.4)
-                assert grip_at(0.0), f'Lift started before closure: {state}'
-                wait(lambda: settled(0.4)); spin_for(0.15)
-                result['keyboard_sequence'] = True
-
-                # A: both actions start together; observe opening while lift descends.
-                key(65)
-                wait(lambda: state['gripper_left_joint'][0] > 0.005 and
-                     state['vertical_to_horizontal'][1] < -0.01)
-                assert state['vertical_to_horizontal'][0] > -0.05
-                wait(lambda: settled(-0.06) and grip_at(0.08)); spin_for(0.15)
-                result['keyboard_parallel'] = True
-                result['keyboard_basic_commands'] = True
-
-            else:
-                left = publisher('gripper/left/cmd_pos')
-                right = publisher('gripper/right/cmd_pos')
-                left.publish(Float64(data=0.05)); right.publish(Float64(data=-0.05))
-                wait(lambda: abs(state['gripper_left_joint'][0] - 0.05) < 0.002 and
-                     abs(state['gripper_right_joint'][0] + 0.05) < 0.002)
-                result['direct_gripper'] = True
+            assert not sim.node.get_publishers_info_by_topic('/m2_gz_simulation/lift/cmd_effort')
+            sim.scalar('lift/cmd_effort',45.0)
+            sim.wait(lambda: sim.state['vertical_to_horizontal'][0]>.03, 5)
+            sim.scalar('lift/cmd_effort',0.0)
+            sim.wait(lambda: abs(sim.state['vertical_to_horizontal'][0])<.005)
+            result['direct_force_actuation'] = True
     finally:
-        node.destroy_node(); rclpy.shutdown()
-        if process.poll() is None:
-            process.send_signal(signal.SIGINT)
-            try:
-                process.wait(timeout=15)
-            except subprocess.TimeoutExpired:
-                os.killpg(process.pid, signal.SIGKILL); process.wait(timeout=5)
-        log.close()
-    output = log_path.read_text()
-    assert process.returncode == 0
-    assert 'process has died' not in output and 'escalating to' not in output, output[-4000:]
-    assert 'Error in destruction' not in output, output[-4000:]
-    expected = ['gazebo', 'parameter_bridge']
-    if mode != 'velocity': expected.append('control_node')
-    if mode == 'fsm': expected.append('fsm_node')
-    for name in expected:
-        assert re.search(r'\[' + name + r'-\d+\]: process has finished cleanly', output), name
+        sim.close()
     result['clean_shutdown'] = True
     return result
 
 
 def main():
-    root = Path(tempfile.mkdtemp(prefix='m2_sim_robot_test_'))
-    print(f'Artifacts: {root}', flush=True)
-    report = {}
+    parser=argparse.ArgumentParser();parser.add_argument('--mode',choices=['all','fsm','position','effort'],default='all');args=parser.parse_args()
+    root=Path(tempfile.mkdtemp(prefix='m2_robocon_test_'));print(f'Artifacts: {root}',flush=True)
+    report={}
     try:
-        for mode in ('fsm', 'position', 'velocity'):
-            report[mode] = run_mode(mode, root)
-            print(f'{mode}: {json.dumps(report[mode])}', flush=True)
-    finally:
-        (root / 'report.json').write_text(json.dumps(report, indent=2))
+        for mode in (('fsm','position','effort') if args.mode=='all' else (args.mode,)):
+            report[mode]=run(mode,root);print(mode,json.dumps(report[mode]),flush=True)
+    finally:(root/'report.json').write_text(json.dumps(report,indent=2))
 
-
-if __name__ == '__main__':
-    main()
+if __name__=='__main__':main()

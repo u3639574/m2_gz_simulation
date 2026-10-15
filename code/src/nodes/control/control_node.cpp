@@ -33,6 +33,9 @@ bool control_node::init() noexcept
             shared_from_this(),
             *feedback_);
 
+    yaw_feedback_ = std::make_unique<joint_feedback>(shared_from_this(), "yaw", "base_to_vertical");
+    yaw_controller_ = std::make_unique<joint_controller>(shared_from_this(), *yaw_feedback_, "yaw", true);
+
     timer_ =
         create_wall_timer(
             std::chrono::duration<double>(1.0 / static_cast<double>(loop_freq_)),
@@ -48,6 +51,8 @@ void control_node::tick() noexcept
     feedback_->advance(now().seconds());
 
     lift_controller_->tick();
+    yaw_feedback_->advance(now().seconds());
+    yaw_controller_->tick();
 }
 
 void control_node::run() noexcept

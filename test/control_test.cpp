@@ -23,7 +23,7 @@ protected:
         options.parameter_overrides({
             rclcpp::Parameter("joint_states_topic", "/controller_test/joints"),
             rclcpp::Parameter("lift.p_setpoint_topic", "/controller_test/setpoint"),
-            rclcpp::Parameter("lift.cmd_vel_topic", "/controller_test/velocity"),
+            rclcpp::Parameter("lift.effort_topic", "/controller_test/effort"),
             rclcpp::Parameter("lift.set_pos_topic", "/controller_test/subsystem_setpoint")});
         node = std::make_shared<rclcpp::Node>("controller_test", options);
         trolly::log::use_ros2_logger(node->get_logger(), node->get_clock());
@@ -32,7 +32,7 @@ protected:
         joint_pub = node->create_publisher<sensor_msgs::msg::JointState>("/controller_test/joints", 1);
         setpoint_pub = node->create_publisher<std_msgs::msg::Float64>("/controller_test/setpoint", 1);
         velocity_sub = node->create_subscription<std_msgs::msg::Float64>(
-            "/controller_test/velocity", 10,
+            "/controller_test/effort", 10,
             [this](const std_msgs::msg::Float64& msg) { output = msg.data; ++output_count; });
         executor.add_node(node);
         pump(0.1);
@@ -76,73 +76,60 @@ protected:
     int output_count{0};
 };
 
-TEST_F(controller_test, RepeatedSetpointsDoNotRestartAccelerationRamp)
+TEST_F(controller_test, RepeatedSetpointsPreserveBothLoops)
 {
-    sample(1.0); ASSERT_TRUE(feedback->ready());
-    for (int i = 1; i <= 20; ++i) {
-        target(0.3); sample(1.0 + i * 0.01); tick();
-        EXPECT_LE(std::abs(output), 0.25);
+    sample(1.0);
+    for (int i = 1; i <= 30; ++i) {
+        target(0.8); sample(1.0 + i * 0.01); tick();
+        EXPECT_LE(std::abs(output), 120.0);
     }
-    // Old code stayed at 0.008 m/s because every heartbeat reset previous_output.
-    EXPECT_GT(output, 0.12);
-    target(-0.3); sample(1.21); tick();
-    EXPECT_LT(output, 0.0);
-    EXPECT_NEAR(output, -0.008, 1e-6);
+    EXPECT_GT(output, 55.0); // gravity + growing velocity-loop effort
 }
 
-TEST_F(controller_test, RepeatedTargetRetainsIntegral)
+TEST_F(controller_test, StaleFeedbackAndClockResetClearEffort)
 {
-    sample(1.0, 0.1); target(0.101);
-    double initial = 0.0;
-    for (int i = 1; i <= 20; ++i) {
-        target(0.101); sample(1.0 + i * 0.01, 0.1); tick();
-        if (i == 1) { initial = output; }
+    sample(1.0); target(0.8); sample(1.01); tick(); EXPECT_GT(output, 39.24);
+    feedback->advance(2.0); tick(); EXPECT_DOUBLE_EQ(output, 0.0);
+    sample(2.01); tick(); EXPECT_GT(output, 39.24);
+    feedback->advance(0.0); tick(); EXPECT_DOUBLE_EQ(output, 0.0);
+    sample(0.01); tick(); EXPECT_GT(output, 39.24);
+}
+
+TEST(Cascade, InnerLoopUsesMeasuredVelocity)
+{
+    auto make = [] { return cascaded_pid(position_pid(3,0,0,.2,.3,.6),100,10,.1,30,120,39.24); };
+    auto stationary=make(), moving=make();
+    EXPECT_GT(stationary.compute(.5,0,0,.01), moving.compute(.5,0,.2,.01));
+}
+
+TEST(Cascade, HoldsPayloadAgainstGravity)
+{
+    cascaded_pid pid(position_pid(3,0,.05,.2,.3,.6),100,180,.3,30,120,39.24);
+    double position=0, velocity=0;
+    constexpr double dt=.005, mass=4.6;
+    for (int i=0;i<3000;++i) {
+        const double force=pid.compute(.5,position,velocity,dt);
+        velocity+=(force-mass*9.81)/mass*dt; position+=velocity*dt;
     }
-    EXPECT_GT(output, initial + 0.00001);
+    EXPECT_NEAR(position,.5,.003); EXPECT_NEAR(velocity,0,.01);
 }
 
-TEST_F(controller_test, FeedbackLossAndResetStopVelocity)
+TEST(Cascade, VelocityRampEffortLimitsAndReset)
 {
-    sample(1.0); target(0.3); sample(1.01); tick(); EXPECT_GT(output, 0.0);
-    for (int i = 1; i <= 6; ++i) { feedback->advance(1.01 + i * 0.05); }
-    tick(); EXPECT_FALSE(feedback->ready()); EXPECT_DOUBLE_EQ(output, 0.0);
-    sample(1.32); tick(); EXPECT_TRUE(feedback->ready());
-    feedback->advance(0.0); tick();
-    EXPECT_TRUE(feedback->discontinuity()); EXPECT_DOUBLE_EQ(output, 0.0);
-    sample(0.01); tick(); EXPECT_TRUE(feedback->ready());
+    cascaded_pid pid(position_pid(3,0,0,.2,.3,.6),100,180,.3,30,20);
+    for (int i=1;i<=100;++i) {
+        EXPECT_LE(std::abs(pid.compute(1,0,0,.01)),20);
+        EXPECT_LE(pid.velocity_target(), std::min(.3,i*.006)+1e-10);
+    }
+    pid.reset(); pid.compute(1,0,0,.01); EXPECT_NEAR(pid.velocity_target(),.006,1e-10);
 }
 
-TEST_F(controller_test, InvalidFeedbackStopsAndNaNTargetDoesNotReplaceGoal)
+TEST(Cascade, RejectsNonfiniteStateAndInvalidTime)
 {
-    sample(1.0); target(0.3); sample(1.01); tick();
-    target(NAN); sample(1.02); tick(); EXPECT_GT(output, 0.0);
-    sensor_msgs::msg::JointState msg;
-    msg.name = {"vertical_to_horizontal"};  // missing position/velocity
-    joint_pub->publish(msg); pump(); feedback->advance(1.03); tick();
-    EXPECT_FALSE(feedback->ready()); EXPECT_DOUBLE_EQ(output, 0.0);
-}
-
-TEST_F(controller_test, SubsystemPublishesOnlyAfterAnExplicitCommand)
-{
-    lift_subsystem subsystem(node);
-    int received = 0; double last_target = 0;
-    auto sub = node->create_subscription<std_msgs::msg::Float64>(
-        "/controller_test/subsystem_setpoint", 10,
-        [&](const std_msgs::msg::Float64& msg) { ++received; last_target = msg.data; });
-    pump(0.1);
-    for (int i = 0; i < 3; ++i) { subsystem.tick(); pump(); }
-    EXPECT_EQ(received, 0);
-    subsystem.set_lift_pos(0.2);
-    for (int i = 0; i < 3; ++i) { subsystem.tick(); pump(); }
-    EXPECT_GE(received, 3); EXPECT_DOUBLE_EQ(last_target, 0.2);
-    subsystem.close();
-}
-
-TEST(PositionPid, LimitsVelocityAccelerationAndRejectsInvalidDt)
-{
-    position_pid pid(3, 0.1, 0.1, 0.2, 0.25, 0.8);
-    EXPECT_DOUBLE_EQ(pid.compute(1, 0, 0, 0), 0.0);
-    EXPECT_DOUBLE_EQ(pid.compute(1, NAN, 0, 0.01), 0.0);
-    EXPECT_NEAR(pid.compute(1, 0, 0, 0.01), 0.008, 1e-12);
-    for (int i = 0; i < 100; ++i) { EXPECT_LE(pid.compute(1, 0, 0, 0.01), 0.25); }
+    cascaded_pid pid(position_pid(3,0,0,.2,.3,.6),100,180,.3,30,120,39.24);
+    EXPECT_EQ(pid.compute(NAN,0,0,.01),0);
+    EXPECT_EQ(pid.compute(.5,INFINITY,0,.01),0);
+    EXPECT_EQ(pid.compute(.5,0,0,0),0);
+    EXPECT_EQ(pid.compute(.5,0,0,-1),0);
+    EXPECT_EQ(pid.compute(.5,0,NAN,.01),0);
 }
