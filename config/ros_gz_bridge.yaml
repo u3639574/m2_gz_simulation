@@ -1,7 +1,20 @@
 # Lift/yaw position -> velocity -> effort cascades run entirely in control_node.
 # ApplyJointForce receives N for the lift and Nm for yaw. No Gazebo lift velocity PID.
 # velocity_target is diagnostic only; p_setpoint is ROS-only.
-# Arrow/X TriggeredPublishers operate on /chassis/cmd_vel directly in Gazebo.
+# Arrow/Z/C/X TriggeredPublishers operate on /chassis/cmd_vel directly in Gazebo.
+# IMU/lidar are raw simulated measurements; no sensor-processing ROS nodes.
+- ros_topic_name: /m2_gz_simulation/imu
+  gz_topic_name: /imu
+  ros_type_name: sensor_msgs/msg/Imu
+  gz_type_name: gz.msgs.IMU
+  direction: GZ_TO_ROS
+  lazy: false
+- ros_topic_name: /m2_gz_simulation/scan
+  gz_topic_name: /lidar
+  ros_type_name: sensor_msgs/msg/LaserScan
+  gz_type_name: gz.msgs.LaserScan
+  direction: GZ_TO_ROS
+  lazy: false
 - ros_topic_name: /clock
   gz_topic_name: /world/arm_world/clock
   ros_type_name: rosgraph_msgs/msg/Clock

@@ -9,6 +9,10 @@
     <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands" />
     <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster" />
     <plugin filename="gz-sim-contact-system" name="gz::sim::systems::Contact" />
+    <plugin filename="gz-sim-imu-system" name="gz::sim::systems::Imu" />
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
     <light type="directional" name="sun">
       <pose>0 0 10 0 0 0</pose>
       <diffuse>0.8 0.8 0.8 1</diffuse>
@@ -207,6 +211,41 @@
             </friction>
           </surface>
         </collision>
+        <sensor name="imu" type="imu">
+          <pose>0 0 0 0 0 0</pose>
+          <topic>/imu</topic>
+          <update_rate>100</update_rate>
+          <always_on>true</always_on>
+          <imu />
+        </sensor>
+        <sensor name="lidar" type="gpu_lidar">
+          <pose>.34 0 .10 0 0 0</pose>
+          <topic>/lidar</topic>
+          <update_rate>10</update_rate>
+          <always_on>true</always_on>
+          <visualize>true</visualize>
+          <lidar>
+            <scan>
+              <horizontal>
+                <samples>720</samples>
+                <resolution>1</resolution>
+                <min_angle>-3.141592653589793</min_angle>
+                <max_angle>3.141592653589793</max_angle>
+              </horizontal>
+              <vertical>
+                <samples>1</samples>
+                <resolution>1</resolution>
+                <min_angle>0</min_angle>
+                <max_angle>0</max_angle>
+              </vertical>
+            </scan>
+            <range>
+              <min>0.08</min>
+              <max>15</max>
+              <resolution>0.01</resolution>
+            </range>
+          </lidar>
+        </sensor>
       </link>
       <link name="vertical_arm">
         <pose>0 0 1.12 0 0 0</pose>
@@ -455,8 +494,58 @@
         <cmd_max>25</cmd_max>
         <cmd_min>-25</cmd_min>
       </plugin>
+      <link name="left_front_steering">
+        <pose>0.23 0.34 0.26 0 0 0</pose>
+        <inertial>
+          <mass>0.3</mass>
+          <inertia>
+            <ixx>0.00018</ixx>
+            <iyy>0.00018</iyy>
+            <izz>0.00018</izz>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyz>0</iyz>
+          </inertia>
+        </inertial>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>0.06 0.06 0.06</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.85 0.55 0.08 1</ambient>
+            <diffuse>0.85 0.55 0.08 1</diffuse>
+          </material>
+        </visual>
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>0.06 0.06 0.06</size>
+            </box>
+          </geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>0.7</mu>
+                <mu2>0.7</mu2>
+              </ode>
+            </friction>
+          </surface>
+        </collision>
+      </link>
+      <joint name="left_front_steering_joint" type="revolute">
+        <parent>base</parent>
+        <child>left_front_steering</child>
+        <axis>
+          <xyz>0 0 1</xyz>
+          <dynamics>
+            <damping>0.0</damping>
+          </dynamics>
+        </axis>
+      </joint>
       <link name="left_front_wheel">
-        <pose>0.23 0.34 0.12 1.57079633 0 0</pose>
+        <pose relative_to="left_front_steering">0 0 -0.14 1.57079633 0 0</pose>
         <inertial>
           <mass>1</mass>
           <inertia>
@@ -491,15 +580,14 @@
             <friction>
               <ode>
                 <mu>1</mu>
-                <mu2>0.2</mu2>
-                <fdir1>1 0 0</fdir1>
+                <mu2>1</mu2>
               </ode>
             </friction>
           </surface>
         </collision>
       </link>
       <joint name="left_front_wheel_joint" type="revolute">
-        <parent>base</parent>
+        <parent>left_front_steering</parent>
         <child>left_front_wheel</child>
         <axis>
           <xyz>0 0 -1</xyz>
@@ -508,8 +596,58 @@
           </dynamics>
         </axis>
       </joint>
+      <link name="right_front_steering">
+        <pose>0.23 -0.34 0.26 0 0 0</pose>
+        <inertial>
+          <mass>0.3</mass>
+          <inertia>
+            <ixx>0.00018</ixx>
+            <iyy>0.00018</iyy>
+            <izz>0.00018</izz>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyz>0</iyz>
+          </inertia>
+        </inertial>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>0.06 0.06 0.06</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.85 0.55 0.08 1</ambient>
+            <diffuse>0.85 0.55 0.08 1</diffuse>
+          </material>
+        </visual>
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>0.06 0.06 0.06</size>
+            </box>
+          </geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>0.7</mu>
+                <mu2>0.7</mu2>
+              </ode>
+            </friction>
+          </surface>
+        </collision>
+      </link>
+      <joint name="right_front_steering_joint" type="revolute">
+        <parent>base</parent>
+        <child>right_front_steering</child>
+        <axis>
+          <xyz>0 0 1</xyz>
+          <dynamics>
+            <damping>0.0</damping>
+          </dynamics>
+        </axis>
+      </joint>
       <link name="right_front_wheel">
-        <pose>0.23 -0.34 0.12 1.57079633 0 0</pose>
+        <pose relative_to="right_front_steering">0 0 -0.14 1.57079633 0 0</pose>
         <inertial>
           <mass>1</mass>
           <inertia>
@@ -544,15 +682,14 @@
             <friction>
               <ode>
                 <mu>1</mu>
-                <mu2>0.2</mu2>
-                <fdir1>1 0 0</fdir1>
+                <mu2>1</mu2>
               </ode>
             </friction>
           </surface>
         </collision>
       </link>
       <joint name="right_front_wheel_joint" type="revolute">
-        <parent>base</parent>
+        <parent>right_front_steering</parent>
         <child>right_front_wheel</child>
         <axis>
           <xyz>0 0 -1</xyz>
@@ -561,8 +698,58 @@
           </dynamics>
         </axis>
       </joint>
+      <link name="left_rear_steering">
+        <pose>-0.23 0.34 0.26 0 0 0</pose>
+        <inertial>
+          <mass>0.3</mass>
+          <inertia>
+            <ixx>0.00018</ixx>
+            <iyy>0.00018</iyy>
+            <izz>0.00018</izz>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyz>0</iyz>
+          </inertia>
+        </inertial>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>0.06 0.06 0.06</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.85 0.55 0.08 1</ambient>
+            <diffuse>0.85 0.55 0.08 1</diffuse>
+          </material>
+        </visual>
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>0.06 0.06 0.06</size>
+            </box>
+          </geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>0.7</mu>
+                <mu2>0.7</mu2>
+              </ode>
+            </friction>
+          </surface>
+        </collision>
+      </link>
+      <joint name="left_rear_steering_joint" type="revolute">
+        <parent>base</parent>
+        <child>left_rear_steering</child>
+        <axis>
+          <xyz>0 0 1</xyz>
+          <dynamics>
+            <damping>0.0</damping>
+          </dynamics>
+        </axis>
+      </joint>
       <link name="left_rear_wheel">
-        <pose>-0.23 0.34 0.12 1.57079633 0 0</pose>
+        <pose relative_to="left_rear_steering">0 0 -0.14 1.57079633 0 0</pose>
         <inertial>
           <mass>1</mass>
           <inertia>
@@ -597,15 +784,14 @@
             <friction>
               <ode>
                 <mu>1</mu>
-                <mu2>0.2</mu2>
-                <fdir1>1 0 0</fdir1>
+                <mu2>1</mu2>
               </ode>
             </friction>
           </surface>
         </collision>
       </link>
       <joint name="left_rear_wheel_joint" type="revolute">
-        <parent>base</parent>
+        <parent>left_rear_steering</parent>
         <child>left_rear_wheel</child>
         <axis>
           <xyz>0 0 -1</xyz>
@@ -614,8 +800,58 @@
           </dynamics>
         </axis>
       </joint>
+      <link name="right_rear_steering">
+        <pose>-0.23 -0.34 0.26 0 0 0</pose>
+        <inertial>
+          <mass>0.3</mass>
+          <inertia>
+            <ixx>0.00018</ixx>
+            <iyy>0.00018</iyy>
+            <izz>0.00018</izz>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyz>0</iyz>
+          </inertia>
+        </inertial>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>0.06 0.06 0.06</size>
+            </box>
+          </geometry>
+          <material>
+            <ambient>0.85 0.55 0.08 1</ambient>
+            <diffuse>0.85 0.55 0.08 1</diffuse>
+          </material>
+        </visual>
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>0.06 0.06 0.06</size>
+            </box>
+          </geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>0.7</mu>
+                <mu2>0.7</mu2>
+              </ode>
+            </friction>
+          </surface>
+        </collision>
+      </link>
+      <joint name="right_rear_steering_joint" type="revolute">
+        <parent>base</parent>
+        <child>right_rear_steering</child>
+        <axis>
+          <xyz>0 0 1</xyz>
+          <dynamics>
+            <damping>0.0</damping>
+          </dynamics>
+        </axis>
+      </joint>
       <link name="right_rear_wheel">
-        <pose>-0.23 -0.34 0.12 1.57079633 0 0</pose>
+        <pose relative_to="right_rear_steering">0 0 -0.14 1.57079633 0 0</pose>
         <inertial>
           <mass>1</mass>
           <inertia>
@@ -650,15 +886,14 @@
             <friction>
               <ode>
                 <mu>1</mu>
-                <mu2>0.2</mu2>
-                <fdir1>1 0 0</fdir1>
+                <mu2>1</mu2>
               </ode>
             </friction>
           </surface>
         </collision>
       </link>
       <joint name="right_rear_wheel_joint" type="revolute">
-        <parent>base</parent>
+        <parent>right_rear_steering</parent>
         <child>right_rear_wheel</child>
         <axis>
           <xyz>0 0 -1</xyz>
@@ -667,18 +902,44 @@
           </dynamics>
         </axis>
       </joint>
-      <plugin filename="gz-sim-diff-drive-system" name="gz::sim::systems::DiffDrive">
-        <left_joint>left_front_wheel_joint</left_joint>
-        <left_joint>left_rear_wheel_joint</left_joint>
-        <right_joint>right_front_wheel_joint</right_joint>
-        <right_joint>right_rear_wheel_joint</right_joint>
-        <wheel_separation>0.68</wheel_separation>
-        <wheel_radius>0.12</wheel_radius>
+      <plugin filename="libm2_swerve_drive.so" name="m2::simulation::SwerveDrive">
         <topic>/chassis/cmd_vel</topic>
+        <wheel_radius>0.12</wheel_radius>
+        <max_wheel_speed>0.6</max_wheel_speed>
+        <wheel_acceleration>0.5</wheel_acceleration>
+        <steering_rate>3</steering_rate>
+        <steering_gain>8</steering_gain>
+        <module>
+          <steering_joint>left_front_steering_joint</steering_joint>
+          <wheel_joint>left_front_wheel_joint</wheel_joint>
+          <x>0.23</x>
+          <y>0.34</y>
+        </module>
+        <module>
+          <steering_joint>right_front_steering_joint</steering_joint>
+          <wheel_joint>right_front_wheel_joint</wheel_joint>
+          <x>0.23</x>
+          <y>-0.34</y>
+        </module>
+        <module>
+          <steering_joint>left_rear_steering_joint</steering_joint>
+          <wheel_joint>left_rear_wheel_joint</wheel_joint>
+          <x>-0.23</x>
+          <y>0.34</y>
+        </module>
+        <module>
+          <steering_joint>right_rear_steering_joint</steering_joint>
+          <wheel_joint>right_rear_wheel_joint</wheel_joint>
+          <x>-0.23</x>
+          <y>-0.34</y>
+        </module>
+      </plugin>
+      <plugin filename="gz-sim-odometry-publisher-system" name="gz::sim::systems::OdometryPublisher">
         <odom_topic>/chassis/odometry</odom_topic>
+        <odom_frame>odom</odom_frame>
+        <robot_base_frame>two_arm_robot/base</robot_base_frame>
         <odom_publish_frequency>50</odom_publish_frequency>
-        <max_linear_acceleration>0.5</max_linear_acceleration>
-        <max_angular_acceleration>0.8</max_angular_acceleration>
+        <dimensions>2</dimensions>
       </plugin>
       <plugin filename="gz-sim-joint-state-publisher-system" name="gz::sim::systems::JointStatePublisher">
         <topic>/world/arm_world/model/two_arm_robot/joint_state</topic>
@@ -686,6 +947,14 @@
         <joint_name>base_to_vertical</joint_name>
         <joint_name>gripper_left_joint</joint_name>
         <joint_name>gripper_right_joint</joint_name>
+        <joint_name>left_front_steering_joint</joint_name>
+        <joint_name>left_front_wheel_joint</joint_name>
+        <joint_name>right_front_steering_joint</joint_name>
+        <joint_name>right_front_wheel_joint</joint_name>
+        <joint_name>left_rear_steering_joint</joint_name>
+        <joint_name>left_rear_wheel_joint</joint_name>
+        <joint_name>right_rear_steering_joint</joint_name>
+        <joint_name>right_rear_wheel_joint</joint_name>
       </plugin>
       <plugin filename="gz-sim-apply-joint-force-system" name="gz::sim::systems::ApplyJointForce">
         <joint_name>vertical_to_horizontal</joint_name>
@@ -704,31 +973,43 @@
       <input type="gz.msgs.Int32" topic="/keyboard/keypress">
         <match field="data">16777235</match>
       </input>
-      <output type="gz.msgs.Twist" topic="/chassis/cmd_vel">linear: {x: 0.2}, angular: {z: 0}</output>
+      <output type="gz.msgs.Twist" topic="/chassis/cmd_vel">linear: {x: 0.2, y: 0}, angular: {z: 0}</output>
     </plugin>
     <plugin filename="gz-sim-triggered-publisher-system" name="gz::sim::systems::TriggeredPublisher">
       <input type="gz.msgs.Int32" topic="/keyboard/keypress">
         <match field="data">16777237</match>
       </input>
-      <output type="gz.msgs.Twist" topic="/chassis/cmd_vel">linear: {x: -0.2}, angular: {z: 0}</output>
+      <output type="gz.msgs.Twist" topic="/chassis/cmd_vel">linear: {x: -0.2, y: 0}, angular: {z: 0}</output>
     </plugin>
     <plugin filename="gz-sim-triggered-publisher-system" name="gz::sim::systems::TriggeredPublisher">
       <input type="gz.msgs.Int32" topic="/keyboard/keypress">
         <match field="data">16777234</match>
       </input>
-      <output type="gz.msgs.Twist" topic="/chassis/cmd_vel">linear: {x: 0}, angular: {z: 0.4}</output>
+      <output type="gz.msgs.Twist" topic="/chassis/cmd_vel">linear: {x: 0, y: 0.2}, angular: {z: 0}</output>
     </plugin>
     <plugin filename="gz-sim-triggered-publisher-system" name="gz::sim::systems::TriggeredPublisher">
       <input type="gz.msgs.Int32" topic="/keyboard/keypress">
         <match field="data">16777236</match>
       </input>
-      <output type="gz.msgs.Twist" topic="/chassis/cmd_vel">linear: {x: 0}, angular: {z: -0.4}</output>
+      <output type="gz.msgs.Twist" topic="/chassis/cmd_vel">linear: {x: 0, y: -0.2}, angular: {z: 0}</output>
+    </plugin>
+    <plugin filename="gz-sim-triggered-publisher-system" name="gz::sim::systems::TriggeredPublisher">
+      <input type="gz.msgs.Int32" topic="/keyboard/keypress">
+        <match field="data">90</match>
+      </input>
+      <output type="gz.msgs.Twist" topic="/chassis/cmd_vel">linear: {x: 0, y: 0}, angular: {z: 0.4}</output>
+    </plugin>
+    <plugin filename="gz-sim-triggered-publisher-system" name="gz::sim::systems::TriggeredPublisher">
+      <input type="gz.msgs.Int32" topic="/keyboard/keypress">
+        <match field="data">67</match>
+      </input>
+      <output type="gz.msgs.Twist" topic="/chassis/cmd_vel">linear: {x: 0, y: 0}, angular: {z: -0.4}</output>
     </plugin>
     <plugin filename="gz-sim-triggered-publisher-system" name="gz::sim::systems::TriggeredPublisher">
       <input type="gz.msgs.Int32" topic="/keyboard/keypress">
         <match field="data">88</match>
       </input>
-      <output type="gz.msgs.Twist" topic="/chassis/cmd_vel">linear: {x: 0}, angular: {z: 0}</output>
+      <output type="gz.msgs.Twist" topic="/chassis/cmd_vel">linear: {x: 0, y: 0}, angular: {z: 0}</output>
     </plugin>
   </world>
 </sdf>

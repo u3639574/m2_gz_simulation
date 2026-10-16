@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Real Gazebo regressions: field, cube grasp, cascade, yaw, tutorial chassis.
+"""Real Gazebo regressions: field, cube grasp, cascade, swerve and raw sensors.
 Source install/setup.bash, then run this script. No GUI is required.
 """
 import argparse
@@ -14,7 +14,7 @@ import time
 
 import rclpy
 from rclpy.qos import qos_profile_sensor_data
-from sensor_msgs.msg import JointState
+from sensor_msgs.msg import JointState, Imu, LaserScan
 from std_msgs.msg import Float64
 from geometry_msgs.msg import Twist
 from tf2_msgs.msg import TFMessage
@@ -38,7 +38,10 @@ class Simulation:
             stderr=subprocess.STDOUT, start_new_session=True)
         rclpy.init(); self.node = rclpy.create_node('robocon_smoke_' + mode)
         self.state = {}; self.poses = {}; self.contact = {}; self.effort = {}; self.velocity_target = {}
-        self.odom = None; self.subs = []
+        self.odom = None; self.imu = None; self.scan = None; self.subs = []
+        for msg_type,topic,attr in [(Imu,'imu','imu'),(LaserScan,'scan','scan')]:
+            self.subs.append(self.node.create_subscription(msg_type,
+                '/m2_gz_simulation/'+topic, lambda msg,a=attr: setattr(self,a,msg), qos_profile_sensor_data))
         self.subs.append(self.node.create_subscription(JointState,
             '/m2_gz_simulation/joint_states', self.joints, qos_profile_sensor_data))
         for name in ('two_arm_robot', 'earth_block_1', 'earth_block_2', 'earth_block_3'):
@@ -137,8 +140,26 @@ class Simulation:
 def run(mode, root):
     sim = Simulation(mode, root); result = {}
     try:
-        sim.wait(lambda: len(sim.state)==4 and len(sim.poses)==4 and sim.odom is not None, 35)
+        sim.wait(lambda: len(sim.state)==12 and len(sim.poses)==4 and sim.odom is not None, 60)
+        sim.wait(lambda: sim.imu is not None and sim.scan is not None, 30)
         sim.spin(1)
+        assert len(sim.scan.ranges)==720
+        finite_ranges=[r for r in sim.scan.ranges if math.isfinite(r)]
+        assert len(finite_ranges)>100 and min(finite_ranges)>=sim.scan.range_min
+        assert sim.scan.header.frame_id and sim.imu.header.frame_id
+        assert abs(sim.imu.linear_acceleration.z-9.8)<.5
+        # The middle ray looks along +X at the first block's front face.
+        # This also catches a sensor accidentally mounted above the blocks.
+        expected=sim.poses['earth_block_1'][0]-.175-(sim.poses['two_arm_robot'][0]+.34)
+        front=sim.scan.ranges[360]
+        assert abs(front-expected)<.03, ('front block range',front,expected)
+        stamp=lambda msg: msg.header.stamp.sec+msg.header.stamp.nanosec*1e-9
+        scan_stamp,imu_stamp=stamp(sim.scan),stamp(sim.imu)
+        sim.spin(.5)
+        assert stamp(sim.scan)>scan_stamp and stamp(sim.imu)>imu_stamp
+        result['sensors']={'scan_samples':len(sim.scan.ranges), 'finite_returns':len(finite_ranges),
+                           'front_block_range_m':front,'expected_front_block_range_m':expected,
+                           'imu_frame':sim.imu.header.frame_id,'lidar_frame':sim.scan.header.frame_id}
         for i, y in enumerate((3.85, 4.45, 5.05), 1):
             pose = sim.poses[f'earth_block_{i}']
             assert abs(pose[0]-4.95)<.005 and abs(pose[1]-y)<.005
@@ -188,23 +209,30 @@ def run(mode, root):
             sim.scalar('yaw/target_degrees',360); sim.spin(.3)
             assert sim.settled('base_to_vertical',math.radians(1),angular=True)
             result['degree_api_shortest_path_and_rejection'] = True
-            # Tutorial TriggeredPublisher -> DiffDrive chain, including stop.
-            for key, linear_sign, angular_sign in ((16777235,1,0),(16777237,-1,0),(16777234,0,1),(16777236,0,-1)):
+            # Swerve keys must move the real body, not just wheel odometry.
+            for key, vx, vy, wz in ((16777235,1,0,0),(16777237,-1,0,0),
+                                     (16777234,0,1,0),(16777236,0,-1,0),(90,0,0,1),(67,0,0,-1)):
                 before = sim.poses['two_arm_robot']
                 sim.key(key)
-                sim.wait(lambda: (sim.odom.twist.twist.linear.x*linear_sign>.05 if linear_sign else
-                                  sim.odom.twist.twist.angular.z*angular_sign>.1), 6)
-                sim.spin(.3)
+                sim.wait(lambda: (sim.odom.twist.twist.linear.x*vx>.05 if vx else
+                                  sim.odom.twist.twist.linear.y*vy>.05 if vy else
+                                  sim.odom.twist.twist.angular.z*wz>.1), 10)
+                sim.spin(.6)
                 after = sim.poses['two_arm_robot']
-                if linear_sign:
-                    travel = ((after[0]-before[0])*math.cos(before[3]) +
-                              (after[1]-before[1])*math.sin(before[3]))
-                    assert travel*linear_sign > .03, (key, before, after)
+                dx=(after[0]-before[0])*math.cos(before[3])+(after[1]-before[1])*math.sin(before[3])
+                dy=-(after[0]-before[0])*math.sin(before[3])+(after[1]-before[1])*math.cos(before[3])
+                dyaw=math.remainder(after[3]-before[3],2*math.pi)
+                if vx or vy:
+                    assert dx*vx+dy*vy > .03, (key,before,after)
+                    assert abs(dyaw)<.08, (key,'translation caused yaw',dyaw)
+                    assert abs(dy if vx else dx)<.05, (key,'cross-axis drift',dx,dy)
                 else:
-                    assert math.remainder(after[3]-before[3],2*math.pi)*angular_sign > .03, (key,before,after)
+                    assert dyaw*wz > .03, (key,before,after)
+                    assert sim.imu.angular_velocity.z*wz>.1, ('IMU yaw',sim.imu)
+                result.setdefault('chassis_motion',[]).append({'key':key,'dx':dx,'dy':dy,'dyaw':dyaw})
                 sim.key(88)
-                sim.wait(lambda: abs(sim.odom.twist.twist.linear.x)<.005 and abs(sim.odom.twist.twist.angular.z)<.005)
-            result['four_arrow_directions_and_stop'] = True
+                sim.wait(lambda: abs(sim.odom.twist.twist.linear.x)<.005 and abs(sim.odom.twist.twist.linear.y)<.005 and abs(sim.odom.twist.twist.angular.z)<.005)
+            result['four_arrows_two_yaw_keys_and_stop'] = True
         elif mode == 'position':
             assert not sim.node.get_publishers_info_by_topic('/m2_gz_simulation/lift/p_setpoint')
             for goal in (.5, 1.0, .2):
@@ -216,9 +244,30 @@ def run(mode, root):
             assert sim.effort['lift']==0 and sim.effort['yaw']==0
             sim.world_control('pause: false')
             sim.wait(lambda: sim.settled('vertical_to_horizontal',.2))
+            # A combined Twist exercises the kinematics beyond the discrete keys.
+            before=sim.poses['two_arm_robot']
+            msg=Twist(); msg.linear.x=.15; msg.linear.y=.10; msg.angular.z=.20
+            sim.drive.publish(msg)
+            sim.wait(lambda: sim.odom.twist.twist.linear.x>.10 and
+                     sim.odom.twist.twist.linear.y>.06 and sim.odom.twist.twist.angular.z>.12, 12)
+            sim.spin(.7)
+            after=sim.poses['two_arm_robot']
+            assert after[0]-before[0]>.03 and after[1]-before[1]>.02
+            assert math.remainder(after[3]-before[3],2*math.pi)>.05
+            # Reset during motion must discard the latched chassis command.
             sim.world_control('reset: {all: true}'); sim.spin(.5)
             sim.scalar('lift/p_setpoint',.4)
             sim.wait(lambda: sim.settled('vertical_to_horizontal',.4))
+            assert abs(sim.odom.twist.twist.linear.x)<.005 and abs(sim.odom.twist.twist.linear.y)<.005
+            assert abs(sim.odom.twist.twist.angular.z)<.005
+            # Harmonic's existing PosePublisher diagnostics can freeze on reset.
+            # OdometryPublisher continues to report the physical ground-truth pose.
+            assert abs(sim.odom.pose.pose.position.x-3.70)<.02
+            assert abs(sim.odom.pose.pose.position.y-3.85)<.02
+            scan_stamp,imu_stamp=stamp(sim.scan),stamp(sim.imu)
+            sim.spin(.5)
+            assert stamp(sim.scan)>scan_stamp and stamp(sim.imu)>imu_stamp
+            result['combined_swerve_twist_and_reset_stop'] = True
             result['isolated_cascade_pause_reset'] = True
         else:
             assert not sim.node.get_publishers_info_by_topic('/m2_gz_simulation/lift/cmd_effort')

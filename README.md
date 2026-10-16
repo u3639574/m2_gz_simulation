@@ -1,7 +1,8 @@
 # m2_gz_simulation
 
 ROS 2 Jazzy / Gazebo Harmonic teaching simulation: a mobile lift/gripper robot on
-the supplied 2027 Robocon venue, with three dynamic Earth Blocks in red storage.
+the supplied 2027 Robocon venue, with three dynamic Earth Blocks in red storage,
+the complete upstream visual scene, four swerve modules, IMU and lidar.
 Commands and subsystems remain in `fsm_node`; lift/yaw control remains in the
 separate `control_node`.
 
@@ -22,7 +23,8 @@ starts running by default.
 | Key | Action |
 |---|---|
 | ↑ / ↓ | Drive forwards / backwards at 0.2 m/s |
-| ← / → | Turn chassis left / right at 0.4 rad/s |
+| ← / → | Translate chassis left / right at 0.2 m/s |
+| Z / C | Rotate chassis counterclockwise / clockwise at 0.4 rad/s |
 | X | Stop chassis |
 | W / S | Raise lift to 1.1 m / lower to 0 m |
 | E / D | Open / close gripper |
@@ -30,9 +32,11 @@ starts running by default.
 | A | Parallel: open and lower |
 | R / F | Turntable to 0° / 180° relative to chassis |
 
-Arrow and X keys use the tutorial's Gazebo `TriggeredPublisher -> DiffDrive`
-connection. A press latches its velocity; releasing the key does not stop the robot.
-Press X to stop. The FSM handles the letter-key arm/yaw commands using the key enum.
+Arrow, Z/C and X keys use Gazebo `TriggeredPublisher -> SwerveDrive`.
+Translation is in the **chassis frame**: +X forward, +Y left. A key replaces the
+whole velocity command; key combinations are not accumulated. A press latches its
+velocity; releasing the key does not stop the robot. Press X to stop.
+The FSM handles the letter-key arm/yaw commands using the key enum.
 Do not drive from a second publisher while using arrow keys.
 
 For a pickup, keep the arm at zero yaw and bottom height, open the fingers, drive
@@ -55,7 +59,10 @@ Gazebo JointState -> control_node feedback
                  -> FSM motion completion (no PID)
 Gazebo finger contacts -> gripper grasp completion
 
-Arrow/X Int32 -> Gazebo TriggeredPublisher -> Twist -> four-wheel DiffDrive
+Arrow/Z/C/X Int32 -> Gazebo TriggeredPublisher -> Twist -> SwerveDrive
+  -> four steering joints + four wheel joints -> physical chassis motion
+
+Gazebo Imu / Sensors(ogre2) -> /imu /lidar -> bridge -> ROS Imu / LaserScan
 ```
 
 Both lift and yaw now run an explicit two-loop cascade in C++. The old lift Gazebo
@@ -107,11 +114,13 @@ ros2 topic pub --once /m2_gz_simulation/lift/p_setpoint std_msgs/msg/Float64 '{d
 Other arguments: `gui` (true), `paused` (false), `world`, `gui_config`,
 `bridge_config`, `fsm_config`, and `control_config`. Launch adds the installed model
 directory to `GZ_SIM_RESOURCE_PATH`; no user-specific model search path is needed.
+It also adds the installed chassis plugin to `GZ_SIM_SYSTEM_PLUGIN_PATH`.
+`gui:=false` enables EGL headless rendering so the GPU lidar still produces scans.
 
 ## Physical model
 
 - Earth Blocks: 0.35 × 0.35 × 0.35 m, nominal mass 0.6 kg; rigid boxes with uniform
-  inertia and friction. Source: supplied rulebook v1.1, page 9. No Sky Blocks.
+  inertia and friction. Source: supplied rulebook v1.1, page 9.
 - Three block centres: `(4.95, 3.85)`, `(4.95, 4.45)`, `(4.95, 5.05)`, all inside
   the red 1 × 2 m storage area. Resting centre height is 0.175 m.
 - Vertical mast: 1.6 m; horizontal beam: 0.9 m; lift travel: 0–1.1 m. At bottom,
@@ -121,13 +130,42 @@ directory to `GZ_SIM_RESOURCE_PATH`; no user-specific model search path is neede
 - Closing against a cube stops the fingers near ±0.125 m. Completion accepts fresh
   contact from both pads on the same Earth Block for at least 0.1 s. Empty closure
   still uses position/velocity completion. There is no artificial fixed attachment.
-- Four wheels: 0.12 m radius, 0.68 m separation, two joints per side in DiffDrive.
+- Four swerve wheels: 0.12 m radius, 0.68 m track and 0.46 m wheelbase. Each wheel
+  has an independent vertical steering joint and rolling joint.
   Base is dynamic and no longer attached to the world.
 
 The model is a teaching robot with enlarged arms, not a competition-size-compliance
 model. The field is the requested community model, not a certified digital twin.
-Imported visual Sky Blocks are removed; collision geometry follows the venue solids
-rather than the upstream coarse, mismatched floor/platform collision boxes.
+The latest checked upstream commit (`1391b36e`) has static Sky Blocks inside its
+mesh but no separate dynamic Earth Blocks. The complete original visual mesh is
+preserved byte for byte; our three Earth Blocks remain. Sky Blocks are static and
+cannot be picked up. Collision geometry follows the venue solids, including the
+Sky Blocks, rather than the upstream mismatched floor/platform collision boxes.
+
+## Raw sensors
+
+| Sensor | Gazebo topic | ROS topic / type | Configuration |
+|---|---|---|---|
+| IMU | `/imu` | `/m2_gz_simulation/imu`, `sensor_msgs/msg/Imu` | 100 Hz, chassis centre |
+| Lidar | `/lidar` | `/m2_gz_simulation/scan`, `sensor_msgs/msg/LaserScan` | 10 Hz, 720 rays, 360°, 0.08–15 m |
+
+No ROS sensor-processing, fusion, navigation or obstacle-avoidance node is added.
+The lidar is at `(0.34, 0, 0.10)` relative to the base link (0.34 m above ground),
+so its scan clears the chassis and intersects the 0.35 m Earth Blocks. The arm
+and grippers can occlude parts of the scan. Frames are `two_arm_robot/base/imu`
+and `two_arm_robot/base/lidar`; extrinsics are in the SDF, with no ROS TF tree added.
+
+```bash
+ros2 topic echo --once /m2_gz_simulation/imu
+ros2 topic echo --once /m2_gz_simulation/scan
+# Gazebo-side verification:
+gz topic -e -t /imu
+gz topic -e -t /lidar
+```
+
+`/m2_gz_simulation/chassis/odometry` now contains **simulation ground truth** from
+Gazebo's OdometryPublisher, not wheel integration or sensor fusion. This makes it
+useful for comparing against the estimator you implement later.
 
 ## Configuration and topic contract
 
@@ -158,8 +196,9 @@ python3 src/m2_gz_simulation/test/simulation_smoke.py --mode fsm
 
 The C++ tests cover cascaded dynamics, payload compensation, feedback faults,
 commands, groups, key ownership, yaw bounds and contact completion. Static tests
-check dimensions, storage containment, four-wheel/actuator ownership and the bridge.
+check dimensions, storage containment, swerve/actuator ownership and sensor bridges.
 Headless tests check real grasp/lift/rotation/release, degree wrap, chassis keys,
+combined X/Y/yaw motion, measured lidar block distance, IMU yaw rates,
 position/effort modes, pause/reset recovery and clean shutdown.
 
 `model/two_arm_robot.sdf` is generated by `scripts/generate_world.py`; edit that
@@ -168,5 +207,6 @@ commit are under `model/robocon_ground/`. `scripts/import_venue.py --source PATH
 reproduces the import from the cloned repository. Models are installed with the
 package; launching needs no network connection.
 
-See [the implementation review](docs/robocon_2027.md) for a file map, design decisions,
-source references and measured test results. Earlier review documents are historical.
+See [the swerve and sensor review](docs/swerve_sensors.md) for this change's file map,
+equations, source references and validation. [The earlier implementation review](docs/robocon_2027.md)
+explains the unchanged cascaded lift/yaw controllers and arm command architecture.

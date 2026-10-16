@@ -1,6 +1,7 @@
 """Launch the Gazebo world, ROS/Gazebo bridge, FSM, and lift control node."""
 
 import os
+from ament_index_python.packages import get_package_prefix
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
@@ -27,7 +28,7 @@ def launch_nodes(context):
         cmd=[
             'gz',
             'sim',
-            *(['--gui-config', LaunchConfiguration('gui_config').perform(context)] if gui else ['-s']),
+            *(['--gui-config', LaunchConfiguration('gui_config').perform(context)] if gui else ['-s', '--headless-rendering']),
             *([] if paused else ['-r']),
             '-v',
             '3',
@@ -35,7 +36,10 @@ def launch_nodes(context):
         ],
         additional_env={'GZ_SIM_RESOURCE_PATH': os.pathsep.join(filter(None, [
             PathJoinSubstitution([FindPackageShare('m2_gz_simulation'), 'model']).perform(context),
-            os.environ.get('GZ_SIM_RESOURCE_PATH', '')]))},
+            os.environ.get('GZ_SIM_RESOURCE_PATH', '')])),
+            'GZ_SIM_SYSTEM_PLUGIN_PATH': os.pathsep.join(filter(None, [
+                os.path.join(get_package_prefix('m2_gz_simulation'), 'lib'),
+                os.environ.get('GZ_SIM_SYSTEM_PLUGIN_PATH', '')]))},
         name='gazebo',
         output='screen',
         on_exit=[

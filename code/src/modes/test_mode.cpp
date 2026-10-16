@@ -9,7 +9,7 @@
 namespace m2::gz_simulation {
 void test_mode::on_enter() noexcept
 {
-    TROLLY_INFO("[test_mode] W/S: lift; E/D: open/close; Q/A: composites; R/F: yaw 0/180; arrows: chassis; X: stop chassis.");
+    TROLLY_INFO("[test_mode] W/S: lift; E/D: open/close; Q/A: composites; R/F: arm yaw 0/180; arrows: chassis X/Y; Z/C: chassis yaw; X: stop chassis.");
 }
 void test_mode::on_exit() noexcept
 {

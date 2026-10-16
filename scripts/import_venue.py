@@ -6,7 +6,7 @@ import shutil
 ROOT = Path(__file__).resolve().parents[1]
 workspace = ROOT.parents[1]
 import argparse
-parser = argparse.ArgumentParser(description='Import the pinned upstream venue, removing fixed game objects')
+parser = argparse.ArgumentParser(description='Import the full pinned venue visual scene and matching collisions')
 parser.add_argument('--source', type=Path, default=workspace/'vendor/gazebo_models')
 args = parser.parse_args()
 import subprocess
@@ -19,16 +19,14 @@ dst = ROOT/'model/robocon_ground'
 (dst/'meshes').mkdir(parents=True, exist_ok=True)
 ns={'c':'http://www.collada.org/2005/11/COLLADASchema'};E.register_namespace('',ns['c'])
 tree=E.parse(src/'meshes/Untitled.dae');root=tree.getroot();scene=root.find('.//c:visual_scene',ns)
-for n in list(scene):
- name=n.get('name','')
- if name.startswith('Cube.') and int(name.split('.')[1])>=20 or name=='Plane.015':scene.remove(n)
-tree.write(dst/'meshes/venue.dae',encoding='utf-8',xml_declaration=True)
+# Preserve the original visual file byte for byte, including static Sky Blocks.
+shutil.copyfile(src/'meshes/Untitled.dae',dst/'meshes/venue.dae')
 # Static triangle collisions follow the imported solid geometry, including ramps/stairs.
 # Remove marking planes and floors; a dedicated floor box avoids duplicate contacts.
 for n in list(scene):
  if not n.get('name','').startswith(('Cube','Cylinder','Boundary_Wall')):scene.remove(n)
 tree.write(dst/'meshes/collision.dae',encoding='utf-8',xml_declaration=True)
-(dst/'model.config').write_text('<?xml version="1.0"?><model><name>robocon_ground</name><version>1.0</version><sdf version="1.10">model.sdf</sdf><description>Imported 2027 field, no game objects</description></model>')
+(dst/'model.config').write_text('<?xml version="1.0"?><model><name>robocon_ground</name><version>1.0</version><sdf version="1.10">model.sdf</sdf><description>Full upstream 2027 field visual scene with static Sky Blocks</description></model>')
 (dst/'model.sdf').write_text('''<?xml version="1.0"?>
 <sdf version="1.10"><model name="robocon_ground"><static>true</static><link name="venue">
 <visual name="field"><geometry><mesh><uri>model://robocon_ground/meshes/venue.dae</uri></mesh></geometry></visual>
@@ -37,6 +35,9 @@ tree.write(dst/'meshes/collision.dae',encoding='utf-8',xml_declaration=True)
 </link></model></sdf>''')
 (dst/'SOURCE.md').write_text('''Source: https://github.com/jimi4-lei/gazebo_models
 Pinned commit: 1391b36e4707cdfc7071d6ad5509bc9a8b828603
-Original: robocon_ground/meshes/Untitled.dae. Local changes: removed fixed Sky Block nodes Cube.020–Cube.043 and Plane.015; collision mesh retains solid venue geometry, omits markings; added floor box. This is the supplied community field model, not a claim of a certified competition digital twin. Upstream provides no explicit license file; attribution is retained for this requested local integration.
+Original: robocon_ground/meshes/Untitled.dae, copied byte for byte to venue.dae.
+All visual nodes are retained, including fixed Sky Block halves Cube.020–Cube.043 and Plane.015. There are no separate dynamic Earth Block models in the upstream Gazebo world; our world supplies three. Sky Blocks remain static mesh geometry, not graspable bodies.
+Collision adaptation: collision mesh retains all solid venue geometry (including Sky Blocks), omits markings; added floor box. This fixes upstream primitive collisions that do not follow the visible ramps/stairs. The original Gazebo Classic world is therefore not used verbatim.
+This is the supplied community field model, not a claim of a certified competition digital twin. Upstream provides no explicit license file; attribution is retained for this requested local integration.
 ''')
 shutil.copy(args.source/'README.md',dst/'UPSTREAM_README.md')

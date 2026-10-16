@@ -12,7 +12,7 @@ set_grip_command::set_grip_command(bool closed) noexcept
     add_requirements({g_subsystem_container.gripper_subsystem});
 }
 void set_grip_command::initialize() noexcept { gripper_->set_gripper(closed_); }
-bool set_grip_command::is_finished() noexcept { return true; }
+bool set_grip_command::is_finished() noexcept { return gripper_->at_target(); }
 void set_grip_command::end(bool interrupted) noexcept
 {
     TROLLY_INFO("[%s] %s", name().c_str(), interrupted ? "Interrupted" : "Reached target");

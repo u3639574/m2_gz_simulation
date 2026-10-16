@@ -143,11 +143,12 @@ TEST_F(keyboard_commands, YawAcceptsDegreesAndMapsPresets)
     press(keyboard_key::R); EXPECT_DOUBLE_EQ(yaw->target_degrees(),0);
 }
 
-TEST_F(keyboard_commands, ArrowKeysDoNotCommandTheArm)
+TEST_F(keyboard_commands, ChassisKeysDoNotCommandTheArm)
 {
     lift->set_lift_pos(.5);
     press(keyboard_key::UP); press(keyboard_key::DOWN);
     press(keyboard_key::LEFT); press(keyboard_key::RIGHT);
+    press(keyboard_key::Z); press(keyboard_key::C); press(keyboard_key::X);
     EXPECT_DOUBLE_EQ(lift->lift_target_pos(),.5); EXPECT_FALSE(grip->is_gripped());
 }
 

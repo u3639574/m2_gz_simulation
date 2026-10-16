@@ -35,9 +35,15 @@ class WorldContract(unittest.TestCase):
     def test_actuator_ownership_and_four_wheels(self):
         self.assertIsNone(self.robot.find("joint[@name='world_to_base']"))
         self.assertEqual(self.robot.find("joint[@name='base_to_vertical']").get('type'),'revolute')
-        drive=self.robot.find("plugin[@name='gz::sim::systems::DiffDrive']")
-        self.assertEqual(len(drive.findall('left_joint')),2)
-        self.assertEqual(len(drive.findall('right_joint')),2)
+        self.assertIsNone(self.robot.find("plugin[@name='gz::sim::systems::DiffDrive']"))
+        drive=self.robot.find("plugin[@name='m2::simulation::SwerveDrive']")
+        self.assertEqual(len(drive.findall('module')),4)
+        for module in drive.findall('module'):
+            steer=self.robot.find(f"joint[@name='{module.findtext('steering_joint')}']")
+            wheel=self.robot.find(f"joint[@name='{module.findtext('wheel_joint')}']")
+            self.assertEqual(steer.findtext('axis/xyz'),'0 0 1')
+            self.assertEqual(steer.findtext('parent'),'base')
+            self.assertEqual(wheel.findtext('parent'),steer.findtext('child'))
         self.assertIsNone(self.robot.find("plugin[@name='gz::sim::systems::JointController']"))
         self.assertEqual(len(self.robot.findall("plugin[@name='gz::sim::systems::ApplyJointForce']")),2)
         for e in self.robot.findall('joint'):
@@ -52,11 +58,23 @@ class WorldContract(unittest.TestCase):
             self.assertIn(self.robot.findtext(f"link[@name='gripper_{side}']/sensor/contact/topic"),gz_topics)
         self.assertNotIn('/vertical_to_horizontal/cmd_vel',gz_topics)
 
-    def test_no_fixed_sky_blocks_in_imported_scene(self):
+    def test_sky_blocks_preserved_in_imported_scene(self):
         tree=ET.parse(ROOT/'model/robocon_ground/meshes/venue.dae')
         ns={'c':'http://www.collada.org/2005/11/COLLADASchema'}
         names={e.get('name') for e in tree.findall('.//c:visual_scene/c:node',ns)}
         self.assertIn('Storage_Red',names)
-        self.assertTrue(all(f'Cube.{i:03d}' not in names for i in range(20,44)))
+        self.assertTrue(all(f'Cube.{i:03d}' in names for i in range(20,44)))
+        self.assertIn('Plane.015',names)
+
+    def test_sensors_have_systems_and_matching_bridges(self):
+        for system in ('Imu','Sensors'):
+            self.assertIsNotNone(self.world.find(f"plugin[@name='gz::sim::systems::{system}']"))
+        bridge=yaml.safe_load((ROOT/'config/ros_gz_bridge.yaml').read_text())
+        for name,kind,ros_type in [('imu','imu','sensor_msgs/msg/Imu'),('lidar','gpu_lidar','sensor_msgs/msg/LaserScan')]:
+            sensor=self.robot.find(f"link[@name='base']/sensor[@name='{name}']")
+            self.assertEqual(sensor.get('type'),kind)
+            row=next(r for r in bridge if r['gz_topic_name']==sensor.findtext('topic'))
+            self.assertEqual(row['ros_type_name'],ros_type)
+            self.assertEqual(row['direction'],'GZ_TO_ROS')
 
 if __name__=='__main__':unittest.main()

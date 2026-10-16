@@ -1,5 +1,9 @@
 # 2027 competition simulation implementation review
 
+Historical review of the initial competition robot. The venue import, chassis,
+sensors and current validation are updated in [swerve_sensors.md](swerve_sensors.md).
+The lift/yaw cascade and arm subsystem descriptions below still apply.
+
 This change extends the keyboard command/subsystem design with an explicit C++
 position/velocity cascade, an imported venue, three Earth Blocks, a turntable, and
 four-wheel chassis control. It preserves the user's removal of the old lift request

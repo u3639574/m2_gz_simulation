@@ -6,9 +6,19 @@ m2b_begin()
 
 m2b_add_subdirectory(code)
 
+# Gazebo-only chassis adapter, kept outside the ROS command/subsystem library.
+find_package(gz-sim8 REQUIRED)
+find_package(gz-plugin2 REQUIRED COMPONENTS register)
+add_library(m2_swerve_drive SHARED gazebo/swerve_drive.cpp)
+target_compile_features(m2_swerve_drive PRIVATE cxx_std_17)
+target_link_libraries(m2_swerve_drive PRIVATE gz-sim8::gz-sim8 gz-plugin2::register)
+install(TARGETS m2_swerve_drive LIBRARY DESTINATION lib)
+
 if(BUILD_TESTING)
     find_package(ament_cmake_gtest REQUIRED)
     find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    ament_add_gtest(swerve_test test/swerve_test.cpp)
+    target_include_directories(swerve_test PRIVATE gazebo)
     add_test(NAME world_contract_test COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/world_contract_test.py)
     ament_add_gtest(keyboard_command_test test/keyboard_command_test.cpp)
     target_include_directories(keyboard_command_test PRIVATE code/include)
