@@ -10,7 +10,9 @@ from launch.actions import (
     LogInfo,
     OpaqueFunction,
     RegisterEventHandler,
+    IncludeLaunchDescription,
 )
+from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.event_handlers import OnProcessExit
 from launch.events import Shutdown
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
@@ -65,7 +67,9 @@ def launch_nodes(context):
         parameters=[
             LaunchConfiguration('fsm_config'),
             {'use_sim_time': True},
+            {'trajectory_config_path': LaunchConfiguration('trajectory_config')},
         ],
+        remappings=[('chassis_odom', 'chassis/odometry'), ('cmd_vel', 'chassis/cmd_vel')],
         output='screen',
     )
 
@@ -108,13 +112,18 @@ def launch_nodes(context):
         for process in processes
     ]
 
-    return [LogInfo(msg=f'Command source: {command_source}'), *handlers, gazebo, *processes]
+    planner = IncludeLaunchDescription(PythonLaunchDescriptionSource(
+        PathJoinSubstitution([FindPackageShare('m2_simlib'), 'launch', 'move_base.launch.py'])))
+    return [LogInfo(msg=f'Command source: {command_source}'), *handlers, gazebo, *processes,
+            *([planner] if command_source == 'fsm' else [])]
 
 
 def generate_launch_description():
     share = FindPackageShare('m2_gz_simulation')
 
     return LaunchDescription([
+        DeclareLaunchArgument('trajectory_config', default_value=PathJoinSubstitution([
+            FindPackageShare('m2_simlib'), 'config', 'trajectory_configs.json'])),
         DeclareLaunchArgument(
             'command_source', default_value='fsm', choices=['fsm', 'position', 'effort'],
             description='fsm: commands/subsystems; position: direct p_setpoint; '

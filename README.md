@@ -11,7 +11,7 @@ separate `control_node`.
 ```bash
 cd ~/ros2_ws
 source /opt/ros/jazzy/setup.bash
-colcon build --packages-select m2_gz_simulation --cmake-args -DBUILD_TESTING=ON
+colcon build --packages-up-to m2_gz_simulation --cmake-args -DBUILD_TESTING=ON
 source install/setup.bash
 ros2 launch m2_gz_simulation simulation.launch.py
 ```
@@ -25,24 +25,34 @@ starts running by default.
 | ↑ / ↓ | Drive forwards / backwards at 0.2 m/s |
 | ← / → | Translate chassis left / right at 0.2 m/s |
 | Z / C | Rotate chassis counterclockwise / clockwise at 0.4 rad/s |
-| X | Stop chassis |
+| X | Stop chassis and cancel any active chassis command/full transfer sequence |
+| T | Full Earth Block pickup and transfer demo from the default spawn |
+| G / B / H | Pickup pose / nearest ramp approach / ramp ascent (staged tests) |
+| V | Move forward at 0.15 m/s for 2 simulation seconds, holding initial yaw |
 | W / S | Raise lift to 1.1 m / lower to 0 m |
 | E / D | Open / close gripper |
 | Q | Sequential: close around a block (or close empty), then raise |
 | A | Parallel: open and lower |
 | R / F | Turntable to 0° / 180° relative to chassis |
 
-Arrow, Z/C and X keys use Gazebo `TriggeredPublisher -> SwerveDrive`.
+All keys now enter the ROS FSM through `/keyboard/keypress`.
 Translation is in the **chassis frame**: +X forward, +Y left. A key replaces the
 whole velocity command; key combinations are not accumulated. A press latches its
 velocity; releasing the key does not stop the robot. Press X to stop.
-The FSM handles the letter-key arm/yaw commands using the key enum.
-Do not drive from a second publisher while using arrow keys.
+The FSM uses the key enum for arm and chassis commands. `m2_simlib` selects the
+final chassis velocity: fresh nonzero keyboard > move_base > FSM. Manual driving
+cancels the active chassis action, including the full transfer sequence. V/G/B/H/T
+clear manual driving before starting.
+X stops all three sources. Do not publish externally on `chassis/cmd_vel` in FSM
+mode; publish a heartbeat on `keyboard/cmd_vel` for a temporary manual override.
 
 For a pickup, keep the arm at zero yaw and bottom height, open the fingers, drive
 about 0.35 m forward until the cube is between the pads, press X, then Q. S lowers
 while retaining the grip; E releases it. A opens immediately while lowering, so a
 held block is released at the current height.
+
+For the complete one-button block-transfer demo, its PID tuning, command structure
+and measured results, see [Earth Block transfer](docs/earth_block_transfer.md).
 
 ## Architecture
 
@@ -59,8 +69,11 @@ Gazebo JointState -> control_node feedback
                  -> FSM motion completion (no PID)
 Gazebo finger contacts -> gripper grasp completion
 
-Arrow/Z/C/X Int32 -> Gazebo TriggeredPublisher -> Twist -> SwerveDrive
+Arrow/Z/C/X Int32 -> test_mode -> simlib move_base_subsystem -> Twist -> SwerveDrive
   -> four steering joints + four wheel joints -> physical chassis motion
+V -> move_forward_until_command -> simlib FSM velocity input
+Gazebo ground-truth odometry -> simlib localization_subsystem
+                            -> existing m2_move_base -> simlib planner velocity input
 
 Gazebo Imu / Sensors(ogre2) -> /imu /lidar -> bridge -> ROS Imu / LaserScan
 ```
@@ -74,6 +87,21 @@ newtons (lift) and newton-metres (yaw). The topology follows the supplied
 not bridged to another controller. Identical or changed setpoints preserve loop
 state and acceleration continuity; invalid feedback or a clock discontinuity resets
 both loops. The lift holds its measured startup position using gravity feedforward.
+
+The lift defaults to Commonlib's sine reference generator. Choose the reference
+for the **next** command using ROS parameters (active moves keep their profile):
+
+```bash
+ros2 param set /m2_gz_simulation/fsm_node lift.motion_profile pid
+ros2 param set /m2_gz_simulation/fsm_node lift.motion_profile sine
+ros2 param set /m2_gz_simulation/fsm_node lift.sine.rise.velocity 0.25
+```
+
+`pid` sends the final position directly. `sine` supplies intermediate positions to
+the same cascaded controller. Parameters are in metres, seconds, m/s and m/s².
+`lift.sine.rise` and `lift.sine.fall` each define `velocity`, `acceleration` and
+`deceleration`. Yaw control is unchanged. See [the simlib review](docs/simlib.md)
+for the file map, copied code, trajectory registration and testing instructions.
 
 ## Yaw interface
 
@@ -101,7 +129,8 @@ service is preserved. Those interfaces no longer exist.
 | `position` | Controller only | `lift/p_setpoint` (m), `yaw/p_setpoint` (rad) |
 | `effort` | Neither application node | `lift/cmd_effort` (N), `yaw/cmd_effort` (Nm) |
 
-Gazebo, bridge, gripper plugins and chassis controls exist in all modes. Stop the
+Gazebo, bridge and gripper plugins exist in all modes. Keyboard driving and
+move_base run only in FSM mode; direct chassis Twist tests use position/effort mode. Stop the
 previous launch before switching. The old `velocity` launch mode and lift
 `cmd_vel` actuator interface have been replaced by effort control.
 

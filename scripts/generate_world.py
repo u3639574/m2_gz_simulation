@@ -124,9 +124,5 @@ plugin(m,'JointStatePublisher',[('topic','/world/arm_world/model/two_arm_robot/j
 for name in ['vertical_to_horizontal','base_to_vertical']:plugin(m,'ApplyJointForce',[('joint_name',name)])
 plugin(m,'PosePublisher',[('publish_link_pose','false'),('publish_model_pose','true'),('use_pose_vector_msg','true'),('update_frequency',50)])
 
-# Keys from keyboard_key.h; keep arrows out of test_mode so each has one owner.
-import re
-keys=dict((k,int(v)) for k,v in re.findall(r'\b([A-Z]+)\s*=\s*(\d+)',(ROOT/'code/include/m2_gz_simulation/base/keyboard_key.h').read_text()))
-for key,vx,vy,w in [('UP',.2,0,0),('DOWN',-.2,0,0),('LEFT',0,.2,0),('RIGHT',0,-.2,0),('Z',0,0,.4),('C',0,0,-.4),('X',0,0,0)]:
-    p=plugin(world,'TriggeredPublisher',[]);inp=child(p,'input',type='gz.msgs.Int32',topic='/keyboard/keypress');child(inp,'match',keys[key],field='data');child(p,'output',f'linear: {{x: {vx}, y: {vy}}}, angular: {{z: {w}}}',type='gz.msgs.Twist',topic='/chassis/cmd_vel')
+# Keyboard is bridged to the FSM; simlib is the sole final chassis velocity producer.
 write(sdf,ROOT/'model/two_arm_robot.sdf')

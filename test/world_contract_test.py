@@ -36,6 +36,7 @@ class WorldContract(unittest.TestCase):
         self.assertIsNone(self.robot.find("joint[@name='world_to_base']"))
         self.assertEqual(self.robot.find("joint[@name='base_to_vertical']").get('type'),'revolute')
         self.assertIsNone(self.robot.find("plugin[@name='gz::sim::systems::DiffDrive']"))
+        self.assertFalse(self.world.findall("plugin[@name='gz::sim::systems::TriggeredPublisher']"))
         drive=self.robot.find("plugin[@name='m2::simulation::SwerveDrive']")
         self.assertEqual(len(drive.findall('module')),4)
         for module in drive.findall('module'):

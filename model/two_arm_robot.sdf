@@ -969,47 +969,5 @@
         <update_frequency>50</update_frequency>
       </plugin>
     </model>
-    <plugin filename="gz-sim-triggered-publisher-system" name="gz::sim::systems::TriggeredPublisher">
-      <input type="gz.msgs.Int32" topic="/keyboard/keypress">
-        <match field="data">16777235</match>
-      </input>
-      <output type="gz.msgs.Twist" topic="/chassis/cmd_vel">linear: {x: 0.2, y: 0}, angular: {z: 0}</output>
-    </plugin>
-    <plugin filename="gz-sim-triggered-publisher-system" name="gz::sim::systems::TriggeredPublisher">
-      <input type="gz.msgs.Int32" topic="/keyboard/keypress">
-        <match field="data">16777237</match>
-      </input>
-      <output type="gz.msgs.Twist" topic="/chassis/cmd_vel">linear: {x: -0.2, y: 0}, angular: {z: 0}</output>
-    </plugin>
-    <plugin filename="gz-sim-triggered-publisher-system" name="gz::sim::systems::TriggeredPublisher">
-      <input type="gz.msgs.Int32" topic="/keyboard/keypress">
-        <match field="data">16777234</match>
-      </input>
-      <output type="gz.msgs.Twist" topic="/chassis/cmd_vel">linear: {x: 0, y: 0.2}, angular: {z: 0}</output>
-    </plugin>
-    <plugin filename="gz-sim-triggered-publisher-system" name="gz::sim::systems::TriggeredPublisher">
-      <input type="gz.msgs.Int32" topic="/keyboard/keypress">
-        <match field="data">16777236</match>
-      </input>
-      <output type="gz.msgs.Twist" topic="/chassis/cmd_vel">linear: {x: 0, y: -0.2}, angular: {z: 0}</output>
-    </plugin>
-    <plugin filename="gz-sim-triggered-publisher-system" name="gz::sim::systems::TriggeredPublisher">
-      <input type="gz.msgs.Int32" topic="/keyboard/keypress">
-        <match field="data">90</match>
-      </input>
-      <output type="gz.msgs.Twist" topic="/chassis/cmd_vel">linear: {x: 0, y: 0}, angular: {z: 0.4}</output>
-    </plugin>
-    <plugin filename="gz-sim-triggered-publisher-system" name="gz::sim::systems::TriggeredPublisher">
-      <input type="gz.msgs.Int32" topic="/keyboard/keypress">
-        <match field="data">67</match>
-      </input>
-      <output type="gz.msgs.Twist" topic="/chassis/cmd_vel">linear: {x: 0, y: 0}, angular: {z: -0.4}</output>
-    </plugin>
-    <plugin filename="gz-sim-triggered-publisher-system" name="gz::sim::systems::TriggeredPublisher">
-      <input type="gz.msgs.Int32" topic="/keyboard/keypress">
-        <match field="data">88</match>
-      </input>
-      <output type="gz.msgs.Twist" topic="/chassis/cmd_vel">linear: {x: 0, y: 0}, angular: {z: 0}</output>
-    </plugin>
   </world>
 </sdf>

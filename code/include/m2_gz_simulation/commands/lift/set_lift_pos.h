@@ -5,6 +5,7 @@
 
 #include "m2_gz_simulation/base/gz_simulation_define.h"
 #include "m2_gz_simulation/subsystems/lift_subsystem.h"
+#include "m2_simlib/utils/sin_traj.h"
 
 namespace m2::gz_simulation {
 
@@ -24,6 +25,10 @@ private:
     double p_setpoint_{0.0};
 
     lift_subsystem* lift_subsystem_;
+    simlib::SinTrajectory trajectory_;
+    double start_position_{0.0}, start_time_{0.0};
+    uint64_t revision_{0};
+    bool sine_{false}, started_{false}, invalid_{false};
 };
 
 }  // namespace m2::gz_simulation

@@ -1,1 +1,5 @@
-m2_gz_simulation_build_current_ros2_dir(m2-gz-simulation-commands)
+m2b_add_subdirectory(chassis)
+m2b_add_subdirectory(lift)
+m2b_add_subdirectory(gripper)
+m2b_add_subdirectory(yaw)
+m2b_add_subdirectory(composite)

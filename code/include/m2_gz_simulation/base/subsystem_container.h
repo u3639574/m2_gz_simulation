@@ -6,6 +6,9 @@
 namespace m2::gz_simulation {
 
 struct subsystem_container_t {
+    fsm::subsystem_instance_id_t localization_subsystem{fsm::SUBSYSTEM_INSTANCE_ID_INVALID};
+    fsm::subsystem_instance_id_t move_base_subsystem{fsm::SUBSYSTEM_INSTANCE_ID_INVALID};
+    fsm::subsystem_instance_id_t chassis_subsystem{fsm::SUBSYSTEM_INSTANCE_ID_INVALID};
     fsm::subsystem_instance_id_t gripper_subsystem{
         fsm::SUBSYSTEM_INSTANCE_ID_INVALID};
     fsm::subsystem_instance_id_t lift_subsystem{

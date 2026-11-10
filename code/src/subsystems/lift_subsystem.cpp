@@ -19,6 +19,28 @@ lift_subsystem::lift_subsystem(std::shared_ptr<rclcpp::Node> node) noexcept
     node_->declare_parameter<double>("lift.max_pos", 1.1);
 
     node_->declare_parameter<double>("lift.bottom_position", 0.0);
+    node_->declare_parameter<std::string>("lift.motion_profile", "sine");
+    for (const auto* direction : {"rise", "fall"}) {
+        const std::string prefix = std::string("lift.sine.") + direction;
+        node_->declare_parameter(prefix + ".velocity", 0.35);
+        node_->declare_parameter(prefix + ".acceleration", 0.6);
+        node_->declare_parameter(prefix + ".deceleration", 0.6);
+    }
+    parameter_callback_ = node_->add_on_set_parameters_callback([](const std::vector<rclcpp::Parameter>& params) {
+        rcl_interfaces::msg::SetParametersResult result; result.successful = true;
+        for (const auto& p : params) {
+            if (p.get_name() == "lift.motion_profile" &&
+                (p.get_type() != rclcpp::ParameterType::PARAMETER_STRING ||
+                 (p.as_string() != "pid" && p.as_string() != "sine"))) {
+                result.successful = false; result.reason = "lift.motion_profile must be pid or sine";
+            }
+            if (p.get_name().rfind("lift.sine.", 0) == 0 &&
+                (p.get_type() != rclcpp::ParameterType::PARAMETER_DOUBLE || !std::isfinite(p.as_double()) || p.as_double() <= 0)) {
+                result.successful = false; result.reason = "Sine velocity/acceleration/deceleration must be finite and positive";
+            }
+        }
+        return result;
+    });
 
     min_pos_ = node_->get_parameter("lift.min_pos").as_double();
     max_pos_ = node_->get_parameter("lift.max_pos").as_double();
@@ -42,7 +64,7 @@ lift_subsystem::lift_subsystem(std::shared_ptr<rclcpp::Node> node) noexcept
         max_pos_);
 }
 
-void lift_subsystem::set_lift_pos(double pos) noexcept
+void lift_subsystem::set_lift_pos(double pos, bool new_request) noexcept
 {
     if (!std::isfinite(pos)) {
         TROLLY_WARN(
@@ -59,18 +81,23 @@ void lift_subsystem::set_lift_pos(double pos) noexcept
             max_pos_);
     }
 
-    lift_pos_target_ = std::clamp(pos, min_pos_, max_pos_);
+    const double target = std::clamp(pos, min_pos_, max_pos_);
+    if (new_request) { begin_motion(); }
+    lift_pos_target_ = target;
     has_target_ = true;
-    completion_->invalidate();
-
-    TROLLY_INFO(
-        "[lift_subsystem] Lift target set to %.3f",
-        lift_pos_target_);
 }
 
 double lift_subsystem::lift_target_pos() const noexcept
 {
     return lift_pos_target_;
+}
+
+simlib::sin_traj_params_t lift_subsystem::trajectory_params(bool rising) const
+{
+    const std::string prefix = rising ? "lift.sine.rise" : "lift.sine.fall";
+    return {0.0f, static_cast<float>(node_->get_parameter(prefix + ".velocity").as_double()),
+        static_cast<float>(node_->get_parameter(prefix + ".acceleration").as_double()),
+        static_cast<float>(node_->get_parameter(prefix + ".deceleration").as_double())};
 }
 
 void lift_subsystem::pub_lift_pos() noexcept

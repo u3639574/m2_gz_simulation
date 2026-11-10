@@ -20,10 +20,29 @@ from geometry_msgs.msg import Twist
 from tf2_msgs.msg import TFMessage
 from ros_gz_interfaces.msg import Contacts
 from nav_msgs.msg import Odometry
+from rcl_interfaces.srv import SetParameters
+from rcl_interfaces.msg import Parameter, ParameterValue, ParameterType
+
+
+class VelocitySource:
+    """FSM inputs need a heartbeat; raw effort/position tests use the final topic."""
+    def __init__(self, node, mode):
+        topic = 'keyboard/cmd_vel' if mode == 'fsm' else 'chassis/cmd_vel'
+        self.publisher = node.create_publisher(Twist, '/m2_gz_simulation/' + topic, 1)
+        self.command = None
+        self.timer = node.create_timer(.05, self.tick) if mode == 'fsm' else None
+
+    def publish(self, msg):
+        self.command = msg
+        self.publisher.publish(msg)
+
+    def tick(self):
+        if self.command is not None:
+            self.publisher.publish(self.command)
 
 
 class Simulation:
-    def __init__(self, mode, root):
+    def __init__(self, mode, root, extra_args=()):
         os.environ['ROS_DOMAIN_ID'] = '175'
         os.environ['GZ_PARTITION'] = f'm2_robocon_{os.getpid()}_{mode}'
         os.environ['ROS_LOG_DIR'] = str(root / 'ros_logs')
@@ -34,7 +53,7 @@ class Simulation:
         self.log = self.log_path.open('w')
         self.process = subprocess.Popen([
             'ros2', 'launch', 'm2_gz_simulation', 'simulation.launch.py',
-            'gui:=false', f'command_source:={mode}'], stdout=self.log,
+            'gui:=false', f'command_source:={mode}', *extra_args], stdout=self.log,
             stderr=subprocess.STDOUT, start_new_session=True)
         rclpy.init(); self.node = rclpy.create_node('robocon_smoke_' + mode)
         self.state = {}; self.poses = {}; self.contact = {}; self.effort = {}; self.velocity_target = {}
@@ -61,7 +80,10 @@ class Simulation:
         self.subs.append(self.node.create_subscription(Odometry,
             '/m2_gz_simulation/chassis/odometry',
             lambda msg: setattr(self, 'odom', msg), qos_profile_sensor_data))
-        self.drive = self.node.create_publisher(Twist, '/m2_gz_simulation/chassis/cmd_vel', 1)
+        self.drive = VelocitySource(self.node, mode)
+        self.lift_reference = None
+        self.subs.append(self.node.create_subscription(Float64, '/m2_gz_simulation/lift/p_setpoint',
+            lambda msg: setattr(self, 'lift_reference', msg.data), 10))
         self.publishers = {}
 
     def joints(self, msg):
@@ -117,6 +139,16 @@ class Simulation:
         error = math.remainder(q-goal, 2*math.pi) if angular else q-goal
         return abs(error)<tolerance and abs(v)<.01
 
+    def lift_profile(self, value):
+        client = self.node.create_client(SetParameters, '/m2_gz_simulation/fsm_node/set_parameters')
+        assert client.wait_for_service(timeout_sec=5)
+        req = SetParameters.Request(parameters=[Parameter(name='lift.motion_profile',
+            value=ParameterValue(type=ParameterType.PARAMETER_STRING, string_value=value))])
+        future = client.call_async(req)
+        self.wait(future.done)
+        assert future.result().results[0].successful, future.result()
+        self.node.destroy_client(client)
+
     def world_control(self, request):
         completed = subprocess.run(['gz', 'service', '-s', '/world/arm_world/control',
             '--reqtype', 'gz.msgs.WorldControl', '--reptype', 'gz.msgs.Boolean',
@@ -167,6 +199,16 @@ def run(mode, root):
         result['three_blocks_on_storage_floor'] = True
         if mode == 'fsm':
             sim.wait(lambda: sim.settled('gripper_left_joint',.22))
+            sim.wait(lambda: len(sim.node.get_publishers_info_by_topic('/m2_gz_simulation/chassis/cmd_vel')) == 1)
+            before = sim.poses['two_arm_robot']
+            start_time = stamp(sim.odom)
+            sim.key(86)  # V: Oogway-style timed forward command via simlib.
+            sim.wait(lambda: sim.odom.twist.twist.linear.x > .05)
+            sim.wait(lambda: stamp(sim.odom)-start_time > 2.5 and abs(sim.odom.twist.twist.linear.x) < .005, 15)
+            after = sim.poses['two_arm_robot']
+            assert .20 < after[0]-before[0] < .40, ('timed forward', before, after)
+            assert abs(after[1]-before[1]) < .03 and abs(after[3]-before[3]) < .05
+            result['timed_forward_distance_m'] = after[0]-before[0]
             # Stage the robot at the first block. The tested arrow mapping is below.
             msg = Twist(); msg.linear.x=.15; sim.drive.publish(msg)
             sim.wait(lambda: sim.poses['two_arm_robot'][0] >= 4.04, 10)
@@ -199,6 +241,13 @@ def run(mode, root):
             sim.wait(lambda: sim.state['vertical_to_horizontal'][1]<-.01 and sim.state['gripper_left_joint'][0]>.01)
             sim.wait(lambda: sim.settled('vertical_to_horizontal',0) and sim.settled('gripper_left_joint',.22))
             result['parallel_open_and_lower'] = True
+            sim.lift_profile('pid')
+            sim.key(87)
+            sim.wait(lambda: sim.lift_reference == 1.1, 2)
+            sim.wait(lambda: sim.settled('vertical_to_horizontal',1.1))
+            sim.key(83); sim.wait(lambda: sim.settled('vertical_to_horizontal',0))
+            sim.lift_profile('sine')
+            result['runtime_lift_profile_switch'] = True
             # Degree API validates range before scheduling. 359 -> 1 uses short arc.
             sim.scalar('yaw/target_degrees',359)
             sim.wait(lambda: sim.settled('base_to_vertical',math.radians(359),angular=True))

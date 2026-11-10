@@ -32,6 +32,11 @@ if(BUILD_TESTING)
         m2_fsm_cpp::m2-fsm-cpp m2_fsm_cpp::m2-fsm-cpp-interface
         trolly::trolly-interface trolly::trolly-ros2)
     ament_target_dependencies(control_test rclcpp sensor_msgs std_msgs std_srvs ros_gz_interfaces)
+    foreach(test_target keyboard_command_test control_test)
+        target_link_libraries(${test_target} m2_simlib::m2-simlib-interface
+            m2_simlib::m2-simlib m2_simlib::m2-simlib-ros2)
+        ament_target_dependencies(${test_target} geometry_msgs nav_msgs m2_interfaces)
+    endforeach()
 endif()
 
 m2b_end()

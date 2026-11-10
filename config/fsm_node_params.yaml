@@ -2,12 +2,70 @@
   ros__parameters:
     loop_freq: 100
     input_topic: /keyboard/keypress
+    localization.feedback_timeout: 0.3
+    pid_pose:
+      move_forward_yaw_params:
+        kp: 2.0
+        ki: 0.0
+        kd: 0.0
+        max_abs_output: 0.5
+      # World coordinates (m), yaw in radians; P-only gains in the existing PID controller.
+      # Earth Block 1: (4.95,3.85); finger reach ~0.90 m.
+      pickup_x: {target: 4.05, kp: 1.4, max_abs_output: 0.28, threshold: 0.012, stable_count_req: 20}
+      pickup_y: {target: 3.85, kp: 2.0, max_abs_output: 0.18, threshold: 0.012, stable_count_req: 20}
+      pickup_yaw: {target: 0.0, kp: 2.5, max_abs_output: 0.35, threshold: 0.018, stable_count_req: 20}
+      # Different X/Y gains and slew limits bend the approach without a registered path.
+      red_approach_x: {target: 3.25, kp: 1.1, max_abs_output: 0.5, threshold: 0.012, stable_count_req: 20}
+      red_approach_y: {target: 3.5, kp: 1.0, max_abs_output: 0.16, threshold: 0.012, stable_count_req: 20}
+      red_approach_yaw: {target: 0.0, kp: 2.5, max_abs_output: 0.35, threshold: 0.018, stable_count_req: 20}
+      blue_approach_x: {target: 3.25, kp: 1.1, max_abs_output: 0.5, threshold: 0.012, stable_count_req: 20}
+      blue_approach_y: {target: -3.5, kp: 1.0, max_abs_output: 0.16, threshold: 0.012, stable_count_req: 20}
+      blue_approach_yaw: {target: 0.0, kp: 2.5, max_abs_output: 0.35, threshold: 0.018, stable_count_req: 20}
+      # Body yaw stays zero. Arm yaw=180 points uphill; chassis drives world -X.
+      # Final chassis pose compensates for the arm offset and chassis pitch on the ramp.
+      red_ascent_x: {target: -0.6, kp: 1.2, max_abs_output: 0.55, threshold: 0.012, stable_count_req: 20}
+      red_ascent_y: {target: 3.5, kp: 2.0, max_abs_output: 0.18, threshold: 0.012, stable_count_req: 20}
+      red_ascent_yaw: {target: 0.0, kp: 2.5, max_abs_output: 0.35, threshold: 0.018, stable_count_req: 20}
+      blue_ascent_x: {target: -0.6, kp: 1.2, max_abs_output: 0.55, threshold: 0.012, stable_count_req: 20}
+      blue_ascent_y: {target: -3.5, kp: 2.0, max_abs_output: 0.18, threshold: 0.012, stable_count_req: 20}
+      blue_ascent_yaw: {target: 0.0, kp: 2.5, max_abs_output: 0.35, threshold: 0.018, stable_count_req: 20}
+    earth_transfer.stage_timeout: 45.0
+    motion:
+      pickup:
+        x: {acceleration: 0.3, deceleration: 0.4}
+        y: {acceleration: 0.12, deceleration: 0.5}
+        yaw: {acceleration: 0.5, deceleration: 0.7}
+        timeout: 40.0
+      red_approach:
+        x: {acceleration: 0.35, deceleration: 0.6}
+        y: {acceleration: 0.12, deceleration: 0.5}
+        yaw: {acceleration: 0.5, deceleration: 0.7}
+        timeout: 40.0
+      blue_approach:
+        x: {acceleration: 0.35, deceleration: 0.6}
+        y: {acceleration: 0.12, deceleration: 0.5}
+        yaw: {acceleration: 0.5, deceleration: 0.7}
+        timeout: 40.0
+      red_ascent:
+        x: {acceleration: 0.35, deceleration: 0.5}
+        y: {acceleration: 0.12, deceleration: 0.5}
+        yaw: {acceleration: 0.5, deceleration: 0.7}
+        timeout: 40.0
+      blue_ascent:
+        x: {acceleration: 0.35, deceleration: 0.5}
+        y: {acceleration: 0.12, deceleration: 0.5}
+        yaw: {acceleration: 0.5, deceleration: 0.7}
+        timeout: 40.0
     completion:
       joint_states_topic: /m2_gz_simulation/joint_states
       position_tolerance: 0.003
       velocity_tolerance: 0.01
       feedback_timeout: 0.25
     lift:
+      motion_profile: sine  # pid: final reference directly; sine: smooth reference, same cascaded PID
+      sine:
+        rise: {velocity: 0.35, acceleration: 0.6, deceleration: 0.6}
+        fall: {velocity: 0.35, acceleration: 0.6, deceleration: 0.6}
       set_pos_topic: /m2_gz_simulation/lift/p_setpoint
       min_pos: 0.0
       max_pos: 1.1

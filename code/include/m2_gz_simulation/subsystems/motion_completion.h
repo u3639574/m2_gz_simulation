@@ -40,15 +40,24 @@ public:
                 stamp_ = rclcpp::Time(msg.header.stamp).seconds();
                 received_ = std::chrono::steady_clock::now();
                 valid_ = true;
+                completion_valid_ = true;
             });
     }
 
     // A new request needs a new feedback sample, even if its goal is unchanged.
-    void invalidate() noexcept { valid_ = false; }
+    void invalidate() noexcept { completion_valid_ = false; }
+
+    bool fresh() const noexcept
+    {
+        const auto age = node_.now().seconds() - stamp_;
+        const auto wall_age = std::chrono::duration<double>(std::chrono::steady_clock::now() - received_).count();
+        return valid_ && age >= -timeout_ && age <= timeout_ && wall_age <= timeout_;
+    }
+    double position(std::size_t index = 0) const noexcept { return positions_.at(index); }
 
     bool at_target(const std::vector<double>& targets) const noexcept
     {
-        if (!valid_ || targets.size() != positions_.size()) { return false; }
+        if (!completion_valid_ || !fresh() || targets.size() != positions_.size()) { return false; }
         const double age = node_.now().seconds() - stamp_;
         const double wall_age = std::chrono::duration<double>(
             std::chrono::steady_clock::now() - received_).count();
@@ -68,6 +77,7 @@ private:
     double stamp_{0.0}, position_tolerance_, velocity_tolerance_, timeout_;
     std::chrono::steady_clock::time_point received_;
     bool valid_{false};
+    bool completion_valid_{false};
     bool angular_{false};
 };
 }  // namespace m2::gz_simulation

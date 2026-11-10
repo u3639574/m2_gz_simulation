@@ -5,6 +5,9 @@ find_package(ros_gz_interfaces REQUIRED)
 find_package(m2_interfaces REQUIRED)
 find_package(trolly REQUIRED)
 find_package(m2_fsm_cpp REQUIRED)
+find_package(m2_simlib REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(nav_msgs REQUIRED)
 
 function(m2_gz_simulation_ros2_add_object_library object_name)
     cmake_parse_arguments(ARG "" "" "DEPENDS;AMENT_DEPENDS" ${ARGN})
@@ -13,6 +16,7 @@ function(m2_gz_simulation_ros2_add_object_library object_name)
             trolly::trolly-interface
             m2_fsm_cpp::m2-fsm-cpp-interface
             m2-gz-simulation-interface
+            m2_simlib::m2-simlib-interface
             ${ARG_DEPENDS}
         AMENT_DEPENDS
             std_msgs
@@ -20,6 +24,9 @@ function(m2_gz_simulation_ros2_add_object_library object_name)
             sensor_msgs
             ros_gz_interfaces
             m2_interfaces
+            m2_simlib
+            geometry_msgs
+            nav_msgs
             ${ARG_AMENT_DEPENDS}
     )
 endfunction()
@@ -33,6 +40,8 @@ function(m2_gz_simulation_ros2_add_library target_name)
             trolly::trolly-ros2
             m2_fsm_cpp::m2-fsm-cpp
             m2_fsm_cpp::m2-fsm-cpp-ros2
+            m2_simlib::m2-simlib
+            m2_simlib::m2-simlib-ros2
             ${ARG_WHOLE_DEPENDS}
         AMENT_DEPENDS
             std_msgs
@@ -40,6 +49,9 @@ function(m2_gz_simulation_ros2_add_library target_name)
             sensor_msgs
             ros_gz_interfaces
             m2_interfaces
+            m2_simlib
+            geometry_msgs
+            nav_msgs
             ${ARG_AMENT_DEPENDS}
     )
 endfunction()
@@ -53,6 +65,8 @@ function(m2_gz_simulation_ros2_add_executable target_name)
             trolly::trolly-ros2
             m2_fsm_cpp::m2-fsm-cpp
             m2_fsm_cpp::m2-fsm-cpp-ros2
+            m2_simlib::m2-simlib
+            m2_simlib::m2-simlib-ros2
             m2-gz-simulation
             ${ARG_WHOLE_DEPENDS}
         AMENT_DEPENDS
@@ -61,6 +75,9 @@ function(m2_gz_simulation_ros2_add_executable target_name)
             sensor_msgs
             ros_gz_interfaces
             m2_interfaces
+            m2_simlib
+            geometry_msgs
+            nav_msgs
             ${ARG_AMENT_DEPENDS}
     )
 endfunction()

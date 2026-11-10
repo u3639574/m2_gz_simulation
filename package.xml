@@ -16,8 +16,10 @@
   <depend>ros_gz_interfaces</depend>
   <depend>gz-sim8</depend>
   <depend>gz-plugin2</depend>
-  <exec_depend>nav_msgs</exec_depend>
-  <exec_depend>geometry_msgs</exec_depend>
+  <depend>nav_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>m2_simlib</depend>
+  <exec_depend>m2_move_base</exec_depend>
   <exec_depend>tf2_msgs</exec_depend>
   <depend>m2_interfaces</depend>
   <depend>trolly</depend>
